@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Pecunia
+Comment=Household budgeting: import bank files, sort spending, keep money in pots
+Exec=pecunia %f
+Icon=pecunia
+Terminal=false
+Categories=Office;Finance;
+MimeType=application/x-pecunia;

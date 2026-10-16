@@ -1,0 +1,73 @@
+# Pecunia web app on Kubernetes: a Deployment, a Service and an Ingress. The pods only serve
+# static files; no data is stored in the cluster. Browsers only allow editing local files on a
+# secure page, so serve it over HTTPS (or reach it as http://localhost through a port-forward).
+#
+#   kubectl apply -f apps/pecunia-web/k8s.yaml
+#   kubectl port-forward svc/pecunia-web 8080:80     # then open http://localhost:8080
+#
+# Change the image tag, the Ingress host and its TLS secret to your own.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pecunia-web
+  labels: { app: pecunia-web }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: pecunia-web }
+  template:
+    metadata:
+      labels: { app: pecunia-web }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: web
+          image: ghcr.io/helico-tech/pecunia-web:latest
+          ports:
+            - { name: http, containerPort: 8080 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+          readinessProbe:
+            httpGet: { path: /, port: http }
+          livenessProbe:
+            httpGet: { path: /, port: http }
+          volumeMounts:
+            # nginx needs somewhere to write its temporary files and pid.
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pecunia-web
+  labels: { app: pecunia-web }
+spec:
+  selector: { app: pecunia-web }
+  ports:
+    - { name: http, port: 80, targetPort: http }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pecunia-web
+spec:
+  rules:
+    - host: pecunia.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: pecunia-web, port: { name: http } }
+  tls:
+    - hosts: [pecunia.example.com]
+      secretName: pecunia-web-tls

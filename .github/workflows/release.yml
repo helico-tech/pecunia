@@ -1,0 +1,195 @@
+# Builds the Mac, Linux and Windows downloads. A pushed tag `vX.Y.Z` (matching the workspace version)
+# publishes them as a GitHub Release; a manual run only keeps them as workflow artifacts.
+# A tag also publishes the web app's container image (ghcr.io/helico-tech/pecunia-web) and, when
+# the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets are set, deploys pecunia.helico.app.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: macOS (universal)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --target aarch64-apple-darwin,x86_64-apple-darwin
+          rustup default stable
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: release-macos-${{ hashFiles('Cargo.lock') }}
+          restore-keys: release-macos-
+      - run: cargo xtask bundle --universal --dmg
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: target/dist/*
+          if-no-files-found: error
+
+  linux:
+    name: Linux (${{ matrix.arch }})
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends pkg-config libxkbcommon-dev libwayland-dev \
+            libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev libgtk-3-dev
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: release-linux-${{ matrix.arch }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: release-linux-${{ matrix.arch }}-
+      - run: cargo xtask package-linux
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-${{ matrix.arch }}
+          path: target/dist/*.tar.gz
+          if-no-files-found: error
+
+  windows:
+    name: Windows (x86_64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: release-windows-${{ hashFiles('Cargo.lock') }}
+          restore-keys: release-windows-
+      - run: cargo xtask package-windows
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: target/dist/*.zip
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [macos, linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Tag matches the workspace version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match version $version"; exit 1; }
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la dist
+          (cd dist && shasum -a 256 * > SHA256SUMS.txt)
+          gh release create "$GITHUB_REF_NAME" dist/* --title "Pecunia $GITHUB_REF_NAME" --generate-notes \
+            --notes-file .github/release-notes.md
+
+  container:
+    name: Web app image (ghcr.io)
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/pecunia-web
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+      # The Rust stage runs natively (its output is the same for every CPU), so arm64 needs no
+      # emulation.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/pecunia-web/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  web:
+    name: Deploy pecunia.helico.app (Cloudflare)
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Skip without Cloudflare secrets
+        if: env.CLOUDFLARE_API_TOKEN == ''
+        run: echo "::notice::CLOUDFLARE_API_TOKEN is not set; the web app was not deployed."
+      - uses: actions/checkout@v7
+        if: env.CLOUDFLARE_API_TOKEN != ''
+      - uses: actions/cache@v6
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/wasm-bindgen
+            target
+          key: release-web-${{ hashFiles('Cargo.lock') }}
+          restore-keys: release-web-
+      - name: Rust toolchain and wasm-bindgen
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: |
+          rustup toolchain install stable --profile minimal -t wasm32-unknown-unknown
+          rustup default stable
+          version=$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/version = |"/, ""); print }' Cargo.lock)
+          wasm-bindgen --version 2>/dev/null | grep -q " $version" || cargo install wasm-bindgen-cli --version "$version" --locked --force
+      - name: Build and deploy
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        run: |
+          cargo xtask web
+          npx --yes wrangler@4 deploy --config apps/pecunia-web/wrangler.toml

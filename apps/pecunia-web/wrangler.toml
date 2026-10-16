@@ -1,0 +1,11 @@
+# Cloudflare Workers static assets for https://pecunia.helico.app. No server code: the app runs in
+# the browser and keeps data in the person's own file (ADR 0005).
+# Build first: `cargo xtask web`. Deploy: `npx wrangler deploy --config apps/pecunia-web/wrangler.toml`.
+name = "pecunia-web"
+compatibility_date = "2026-10-01"
+workers_dev = false
+preview_urls = false
+routes = [{ pattern = "pecunia.helico.app", custom_domain = true }]
+
+[assets]
+directory = "../../target/web"
