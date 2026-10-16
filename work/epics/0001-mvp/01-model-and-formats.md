@@ -25,5 +25,9 @@ matching, ingest, the offline classifier with rule learning, Review, register qu
 
 ## Progress log
 - 2026-10-16: plan written.
+- 2026-10-16: `formats` ported: `built_in_profiles`, `detect`, `parse`, `preview_csv` (plain functions, no
+  trait), `samples` (synthetic bank-file writers). All budget.rs parser tests kept; new tests for saved
+  profiles, the preview, the amount cap and hostile input. Found and fixed: roxmltree recurses per
+  nesting level, so CAMT files nested deeper than 128 are refused before parsing (stack overflow otherwise).
 
 ## Follow-ups
