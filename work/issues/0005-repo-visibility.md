@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 type: question
 created: 2026-10-16
 ---
@@ -12,3 +12,5 @@ secret), and CI on macOS and Windows runners uses billed minutes.
 
 ## Notes
 OpenIssue is public. Decide, then fix the links or the docs.
+- 2026-10-16: The owner chose public (like OpenIssue) so releases are public; made public the same day.
+  History checked first: no secrets, only made-up or public example IBANs. No license file, as in OpenIssue.

@@ -48,7 +48,9 @@ Details: [docs/architecture.md](docs/architecture.md). Decisions: [docs/adr/](do
   bank data only; never commit real bank exports.
 
 ## Releases
-- Bump `version` in the root `Cargo.toml`, commit, then `git tag vX.Y.Z && git push --tags`.
+- **Every finished user-visible change is released** (the owner's rule): bump the patch `version` in the root
+  `Cargo.toml` (minor for a bigger feature), run `cargo xtask ci`, commit, push, then `git tag vX.Y.Z` and push
+  the tag. The repo is public, so the release is too. Redeploy the web app by hand (no Cloudflare secrets in CI).
   `.github/workflows/release.yml` builds the universal macOS `.dmg`, the macOS CLI archive, the Linux
   x86_64/arm64 tarballs and the Windows x86_64 zip, and publishes them as a GitHub Release with
   `SHA256SUMS.txt` and `.github/release-notes.md`. The tag must match the version.

@@ -33,8 +33,7 @@ there you get the sample household, not saved.
 
 ## Download
 
-Get the latest build from [Releases](https://github.com/helico-tech/pecunia/releases/latest). The
-repository is private for now, so you only see the releases if you have access to it.
+Get the latest build from [Releases](https://github.com/helico-tech/pecunia/releases/latest).
 
 - **macOS** (Apple Silicon and Intel): `Pecunia-…-macos-universal.dmg`. Drag Pecunia to
   Applications. It isn't notarised yet, so the first time, right-click the app and choose **Open**.
