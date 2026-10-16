@@ -90,6 +90,11 @@ pub fn book(txns: Vec<Txn>) -> Book {
     b
 }
 
+/// The transactions as the reports take them.
+pub fn refs(txns: &[Txn]) -> Vec<&Txn> {
+    txns.iter().collect()
+}
+
 pub fn p(account: AccountId, cents: i64) -> Posting {
     Posting::new(account, Money(cents))
 }
