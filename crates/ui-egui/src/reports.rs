@@ -316,6 +316,22 @@ fn tabs(ui: &mut Ui, current: ReportKind, t: &Tokens, actions: &mut Actions) {
 
 /// A row of summary tiles: a label in small capitals and a big number.
 fn tiles(ui: &mut Ui, items: &[(&str, String, Color32)], t: &Tokens) {
+    if crate::is_compact(ui.ctx()) {
+        // Phone layout: one tile per line, the label left and the number right.
+        let w = ui.available_width();
+        for (label, value, col) in items {
+            let (r, _) = ui.allocate_exact_size(vec2(w, 50.0), Sense::hover());
+            let p = ui.painter();
+            p.rect(r, 10.0, t.surface, Stroke::new(1.0, t.border), StrokeKind::Inside);
+            p.text(pos2(r.right() - 16.0, r.center().y), Align2::RIGHT_CENTER, value, theme::bold(18.0), *col);
+            let vw = p.layout_no_wrap(value.clone(), theme::bold(18.0), *col).size().x;
+            let label = widgets::elide(ui, &label.to_uppercase(), theme::bold(11.0), r.width() - vw - 48.0);
+            ui.painter().text(pos2(r.left() + 16.0, r.center().y), Align2::LEFT_CENTER, label, theme::bold(11.0), t.text_faint);
+            ui.add_space(8.0);
+        }
+        ui.add_space(6.0);
+        return;
+    }
     let n = items.len().max(1) as f32;
     let gap = 12.0;
     let w = ui.available_width();
@@ -537,6 +553,13 @@ fn share_row(ui: &mut Ui, name: &str, m: Money, total: Money, col: Color32, chil
     let p = ui.painter();
     let (font, name_col) = if child { (theme::body(13.0), t.text_dim) } else { (theme::bold(13.5), t.text) };
     let x = rect.left() + if child { 26.0 } else { 6.0 };
+    if crate::is_compact(ui.ctx()) {
+        // Phone layout: the name and the amount, with the share as a thin bar under the name.
+        text(ui, x, cy - 3.0, name, font.clone(), name_col, pct_right - 12.0 - x);
+        bar_at(p, Rect::from_min_max(pos2(x, cy + 9.0), pos2(pct_right - 12.0, cy + 11.0)), share, col, t);
+        amount(p, right, cy, m, font, if child { t.text_dim } else { t.text });
+        return resp;
+    }
     text(ui, x, cy, name, font.clone(), name_col, bar_left - 12.0 - x);
     bar_at(
         p,
@@ -667,6 +690,24 @@ fn cash_flow(ui: &mut Ui, book: &Book, r: &CashFlow, t: &Tokens, actions: &mut A
         }
         card(ui, t, |ui| {
             card_title(ui, title, None, t);
+            if crate::is_compact(ui.ctx()) {
+                // Phone layout: the closing balance on the right, in and out on a second line.
+                for a in &lines {
+                    let (rect, resp) = row(ui, 46.0, true, format!("{} in {} out {}", a.name, a.money_in.format(), a.money_out.format()), true, t);
+                    let cy = rect.center().y;
+                    let right = rect.right() - 6.0;
+                    let (kind, g) = account_kind(book, a.account);
+                    icons::account(ui.painter(), pos2(rect.left() + 16.0, cy), 20.0, kind, g, t);
+                    amount(ui.painter(), right, cy - 8.0, a.closing, theme::bold(13.0), t.text);
+                    text(ui, rect.left() + 36.0, cy - 8.0, &a.name, theme::body(13.5), t.text, right - AMOUNT_W - rect.left() - 36.0);
+                    let s = format!("in {} · out {} · was {}", a.money_in.format(), a.money_out.format(), a.opening.format());
+                    text(ui, rect.left() + 36.0, cy + 9.0, &s, theme::body(11.5), t.text_dim, right - rect.left() - 36.0);
+                    if resp.clicked() {
+                        actions.push(register_of(a.account, r.from, r.to));
+                    }
+                }
+                return;
+            }
             let w = ui.available_width();
             let col_w = ((w - 190.0) / 4.0).clamp(84.0, 130.0);
             let rights: Vec<f32> = (0..4).map(|i| w - 6.0 - (3 - i) as f32 * col_w).collect();
@@ -738,6 +779,10 @@ fn fixed_costs(ui: &mut Ui, book: &Book, r: &FixedCosts, t: &Tokens) {
         card_title(ui, "Repeating costs", None, t);
         if r.items.is_empty() {
             empty_line(ui, "None found yet. A payment counts after three payments to the same payee about a month apart.", t);
+            return;
+        }
+        if crate::is_compact(ui.ctx()) {
+            fixed_costs_compact(ui, book, r, t);
             return;
         }
         let w = ui.available_width();
@@ -830,6 +875,36 @@ fn fixed_costs(ui: &mut Ui, book: &Book, r: &FixedCosts, t: &Tokens) {
             }
         });
     }
+}
+
+/// Phone layout of the repeating costs: the payee and its cost per month, then how often, the amount and the next date.
+fn fixed_costs_compact(ui: &mut Ui, book: &Book, r: &FixedCosts, t: &Tokens) {
+    let n = r.items.len();
+    for (i, c) in r.items.iter().enumerate() {
+        let (rect, _) = row(ui, 46.0, false, format!("{} {} per month", c.name, c.per_month.format()), i + 1 < n, t);
+        let cy = rect.center().y;
+        let right = rect.right() - 6.0;
+        amount(ui.painter(), right, cy - 8.0, c.per_month, theme::bold(13.0), t.text);
+        let room = right - AMOUNT_W - rect.left() - 6.0;
+        text(ui, rect.left() + 6.0, cy - 8.0, &c.name, theme::body(13.5), t.text, room);
+        let mut what = vec![frequency(c.frequency), c.amount.format(), format!("next {}", c.next_date.format("%-d %b"))];
+        what.extend(c.counters.iter().map(|a| book.account_label(*a)));
+        let unsorted = what.iter().any(|w| w.contains("Not sorted yet"));
+        text(
+            ui,
+            rect.left() + 6.0,
+            cy + 9.0,
+            &what.join(" · "),
+            theme::body(11.5),
+            if unsorted { t.warning } else { t.text_dim },
+            right - rect.left() - 6.0,
+        );
+    }
+    let (rect, _) = row(ui, 38.0, false, "Total".into(), false, t);
+    ui.painter().line_segment([rect.left_top(), rect.right_top()], Stroke::new(1.0, t.border));
+    let p = ui.painter();
+    p.text(pos2(rect.left() + 6.0, rect.center().y), Align2::LEFT_CENTER, "Total per month", theme::bold(13.0), t.text);
+    amount(p, rect.right() - 6.0, rect.center().y, r.total_per_month, theme::bold(13.0), t.text);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

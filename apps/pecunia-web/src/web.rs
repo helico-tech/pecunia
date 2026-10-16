@@ -308,6 +308,8 @@ impl App {
         }
         let t = self.app.tokens();
         let mut action = None;
+        // A phone gets the short texts.
+        let compact = pecunia_ui_egui::is_compact(ui.ctx());
         egui::Panel::top("web-banner")
             .resizable(false)
             .frame(egui::Frame::new().fill(t.warning_soft).inner_margin(egui::Margin::symmetric(12, 7)))
@@ -315,16 +317,21 @@ impl App {
                 ui.horizontal_wrapped(|ui| {
                     pecunia_ui_egui::widgets::demo_badge(ui, 12.0, &t);
                     if !self.supported {
-                        ui.label(
-                            egui::RichText::new(
-                                "You are looking at a made-up household. Nothing is saved: this browser can't edit files on your computer. Use Chrome or Edge, or the desktop app.",
-                            )
-                            .color(t.text),
-                        );
+                        let text = if compact {
+                            "A made-up household. Nothing is saved: this browser can't edit your files. Use Chrome or Edge on a computer, or the desktop app."
+                        } else {
+                            "You are looking at a made-up household. Nothing is saved: this browser can't edit files on your computer. Use Chrome or Edge, or the desktop app."
+                        };
+                        ui.label(egui::RichText::new(text).color(t.text));
                         ui.hyperlink_to("Download Pecunia", RELEASES);
                         return;
                     }
-                    ui.label(egui::RichText::new("You are looking at a made-up household. Nothing here is real, and nothing is saved. Your own book is a file on your computer:").color(t.text));
+                    let text = if compact {
+                        "A made-up household. Nothing is saved."
+                    } else {
+                        "You are looking at a made-up household. Nothing here is real, and nothing is saved. Your own book is a file on your computer:"
+                    };
+                    ui.label(egui::RichText::new(text).color(t.text));
                     if ui.button("Start your own book…").clicked() {
                         action = Some("new");
                     }

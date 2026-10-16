@@ -12,6 +12,8 @@ use crate::theme::{self, Tokens};
 use crate::{PecuniaApp, widgets};
 
 const ROW_H: f32 = 56.0;
+/// Phone layout: the quick answer gets a line of its own under the payee.
+const ROW_H_COMPACT: f32 = 96.0;
 
 fn items(app: &PecuniaApp) -> Vec<ReviewItem> {
     let tab = app.session.view.review_tab;
@@ -55,24 +57,19 @@ pub fn show(app: &mut PecuniaApp, ui: &mut Ui, t: &Tokens) {
             tabs.push((Some(k), format!("{} {n}", k.label())));
         }
     }
-    for (k, label) in tabs {
-        let on = current == k;
-        let r = widgets::pill_outlined(
-            &mut row,
-            |p, c| match k {
-                Some(k) => icons::review(p, c, 13.0, k, t),
-                None => icons::glyph(p, c, 13.0, Glyph::Inbox, t.text_dim),
-            },
-            &label,
-            !on,
-            t,
-        );
-        if on {
-            row.painter().rect_stroke(r.rect, 7.0, Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+    // Phone layout: the tabs scroll sideways.
+    let compact = app.ui.compact;
+    let mut tab_row = |row: &mut Ui| {
+        for (k, label) in &tabs {
+            tab(row, *k, label, current, t, &mut actions);
         }
-        if r.clicked() {
-            actions.push(("view.reviewTab", json!({ "tab": k.map(|k| k.id()) })));
-        }
+    };
+    if compact {
+        egui::ScrollArea::horizontal().scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(&mut row, |ui| {
+            ui.horizontal_centered(|ui| tab_row(ui));
+        });
+    } else {
+        tab_row(&mut row);
     }
 
     let list = items(app);
@@ -97,22 +94,44 @@ pub fn show(app: &mut PecuniaApp, ui: &mut Ui, t: &Tokens) {
     }
 }
 
+fn tab(row: &mut Ui, k: Option<ReviewKind>, label: &str, current: Option<ReviewKind>, t: &Tokens, actions: &mut Vec<(&'static str, Json)>) {
+    let on = current == k;
+    let r = widgets::pill_outlined(
+        row,
+        |p, c| match k {
+            Some(k) => icons::review(p, c, 13.0, k, t),
+            None => icons::glyph(p, c, 13.0, Glyph::Inbox, t.text_dim),
+        },
+        label,
+        !on,
+        t,
+    );
+    if on {
+        row.painter().rect_stroke(r.rect, 7.0, Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+    }
+    if r.clicked() {
+        actions.push(("view.reviewTab", json!({ "tab": k.map(|k| k.id()) })));
+    }
+}
+
 fn rows(app: &mut PecuniaApp, ui: &mut Ui, list: &[ReviewItem], t: &Tokens, actions: &mut Vec<(&'static str, Json)>) {
     let book = app.session.book().clone();
     let tree = book.tree();
     let selected = app.session.selection;
     let scroll_to = std::mem::take(&mut app.ui.scroll_to_selection);
     let mut select: Option<Option<TxnId>> = None;
+    let compact = app.ui.compact;
+    let row_h = if compact { ROW_H_COMPACT } else { ROW_H };
     egui::ScrollArea::vertical().auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
         let w = ui.available_width();
-        let (area, _) = ui.allocate_exact_size(vec2(w, list.len() as f32 * ROW_H + 24.0), Sense::hover());
+        let (area, _) = ui.allocate_exact_size(vec2(w, list.len() as f32 * row_h + 24.0), Sense::hover());
         for (i, item) in list.iter().enumerate() {
-            let y = i as f32 * ROW_H;
-            let rect = Rect::from_min_size(pos2(area.left(), area.top() + y), vec2(w, ROW_H));
+            let y = i as f32 * row_h;
+            let rect = Rect::from_min_size(pos2(area.left(), area.top() + y), vec2(w, row_h));
             if scroll_to && Some(item.id) == selected {
                 ui.scroll_to_rect(rect.expand(8.0), None);
             }
-            if y + ROW_H < viewport.top() - ROW_H || y > viewport.bottom() + ROW_H {
+            if y + row_h < viewport.top() - row_h || y > viewport.bottom() + row_h {
                 continue;
             }
             let Some(txn) = book.txn(item.id) else { continue };
@@ -129,14 +148,15 @@ fn rows(app: &mut PecuniaApp, ui: &mut Ui, list: &[ReviewItem], t: &Tokens, acti
                 [pos2(rect.left() + 16.0, rect.bottom()), pos2(rect.right(), rect.bottom())],
                 Stroke::new(1.0, t.border.gamma_multiply(0.7)),
             );
-            let cy = rect.center().y;
+            // Phone layout: payee and amount on top, the quick answer on a line below.
+            let cy = if compact { rect.top() + 28.0 } else { rect.center().y };
             icons::review(&p, pos2(rect.left() + 26.0, cy), 16.0, item.kind, t);
             let x = rect.left() + 48.0;
             let amount = household_amount(&tree, txn);
             let ag = p.layout_no_wrap(amount.format(), theme::bold(13.5), if amount.is_positive() { t.positive } else { t.text });
             // Quick answers on the right, before the amount.
-            let quick_w = 300.0f32.min(w * 0.4);
-            let amount_x = rect.right() - 20.0 - ag.size().x;
+            let quick_w = if compact { 0.0 } else { 300.0f32.min(w * 0.4) };
+            let amount_x = rect.right() - if compact { 16.0 } else { 20.0 } - ag.size().x;
             p.galley(pos2(amount_x, cy - ag.size().y / 2.0), ag, t.text);
             let text_room = (amount_x - quick_w - 20.0 - x).max(80.0);
             let payee = widgets::elide(ui, &txn.payee, theme::body(13.5), text_room);
@@ -147,7 +167,11 @@ fn rows(app: &mut PecuniaApp, ui: &mut Ui, list: &[ReviewItem], t: &Tokens, acti
             }
             let second = widgets::elide(ui, &second, theme::body(11.5), text_room);
             p.text(pos2(x, cy + 10.0), Align2::LEFT_CENTER, second, theme::body(11.5), t.text_dim);
-            let quick = Rect::from_min_max(pos2(amount_x - quick_w - 12.0, rect.top() + 12.0), pos2(amount_x - 12.0, rect.bottom() - 12.0));
+            let quick = if compact {
+                Rect::from_min_max(pos2(x, rect.bottom() - 44.0), pos2(rect.right() - 16.0, rect.bottom() - 10.0))
+            } else {
+                Rect::from_min_max(pos2(amount_x - quick_w - 12.0, rect.top() + 12.0), pos2(amount_x - 12.0, rect.bottom() - 12.0))
+            };
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(quick).layout(egui::Layout::right_to_left(egui::Align::Center)));
             quick_answer(&mut child, &book, item, t, actions);
             if resp.clicked() {

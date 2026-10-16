@@ -21,7 +21,8 @@ fn row(
     t: &Tokens,
 ) -> egui::Response {
     let w = ui.available_width();
-    let (rect, resp) = ui.allocate_exact_size(vec2(w, 28.0), Sense::click());
+    let h = if crate::is_compact(ui.ctx()) { 40.0 } else { 28.0 };
+    let (rect, resp) = ui.allocate_exact_size(vec2(w, h), Sense::click());
     let bg = if active {
         t.selected
     } else if resp.hovered() {
@@ -127,6 +128,7 @@ fn header(app: &mut PecuniaApp, ui: &mut Ui, t: &Tokens) {
         }
     });
     if let Some((id, p)) = action {
+        app.ui.menu = false;
         app.run_any(id, p);
     }
 }
@@ -152,6 +154,9 @@ fn buttons(app: &mut PecuniaApp, ui: &mut Ui, t: &Tokens) {
             }
         }
     });
+    if new || import {
+        app.ui.menu = false;
+    }
     if new {
         app.new_txn();
     }
@@ -228,6 +233,13 @@ fn body(app: &mut PecuniaApp, ui: &mut Ui, t: &Tokens) {
     }
     ui.add_space(8.0);
 
+    if go.is_some() || show.is_some() || new_account {
+        // Phone layout: picking something closes the menu and shows it, not a transaction picked before.
+        if app.ui.menu {
+            app.ui.menu = false;
+            app.select(None);
+        }
+    }
     if let Some(s) = go {
         if s == Screen::Transactions {
             app.ui.search.clear();

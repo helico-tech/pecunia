@@ -193,6 +193,9 @@ pub enum Glyph {
     Swap,
     /// A padlock: a protected book.
     Lock,
+    /// Three lines: the menu on a phone.
+    Menu,
+    ChevronLeft,
 }
 
 pub fn glyph(p: &Painter, c: Pos2, size: f32, g: Glyph, col: Color32) {
@@ -212,6 +215,14 @@ pub fn glyph(p: &Painter, c: Pos2, size: f32, g: Glyph, col: Color32) {
         Glyph::Check => check(p, c, size * 0.8, st),
         Glyph::ChevronDown => {
             p.add(Shape::line(vec![pos2(c.x - s * 0.55, c.y - s * 0.25), pos2(c.x, c.y + s * 0.3), pos2(c.x + s * 0.55, c.y - s * 0.25)], st));
+        }
+        Glyph::ChevronLeft => {
+            p.add(Shape::line(vec![pos2(c.x + s * 0.25, c.y - s * 0.55), pos2(c.x - s * 0.3, c.y), pos2(c.x + s * 0.25, c.y + s * 0.55)], st));
+        }
+        Glyph::Menu => {
+            for dy in [-0.6, 0.0, 0.6] {
+                p.line_segment([pos2(c.x - s * 0.8, c.y + dy * s), pos2(c.x + s * 0.8, c.y + dy * s)], st);
+            }
         }
         Glyph::ChevronRight => {
             p.add(Shape::line(vec![pos2(c.x - s * 0.25, c.y - s * 0.55), pos2(c.x + s * 0.3, c.y), pos2(c.x - s * 0.25, c.y + s * 0.55)], st));

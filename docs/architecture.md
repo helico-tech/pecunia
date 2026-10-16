@@ -78,6 +78,8 @@ frozen plain and encrypted book per version that CI opens on every run.
   number, name, IBAN or path (`ING / Holiday`), transactions by number. Answers: amounts in
   integer cents.
 - `view.*` and `txn.select` only steer the screen; MCP leaves them out.
+- Phones (ADR 0008): below 720 points wide the UI shows one view at a time (menu, screen or
+  details) and screens reflow on `app.ui.compact`. Check UI changes at 390×844 too.
 
 ## Testing
 
@@ -86,4 +88,5 @@ frozen plain and encrypted book per version that CI opens on every run.
 - `store`: round trip, external writers, hostile files.
 - `engine`: command flows, undo/autosave, headless dialogs, file reload, import through the real
   parsers, reports, and `hostile_params_never_panic` (every command × junk params).
-- `mcp`: protocol, tools, garbage input. `ui-egui`: egui_kittest flows and every screen rendered.
+- `mcp`: protocol, tools, garbage input. `ui-egui`: egui_kittest flows and every screen rendered,
+  wide and on a phone.

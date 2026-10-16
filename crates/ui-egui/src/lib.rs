@@ -27,6 +27,14 @@ use serde_json::{Value as Json, json};
 
 use crate::theme::Tokens;
 
+/// Below this width (in points) the window gets the phone layout: one thing at a time.
+pub const COMPACT_WIDTH: f32 = 720.0;
+
+/// Whether the window is narrow enough for the phone layout.
+pub fn is_compact(ctx: &egui::Context) -> bool {
+    ctx.content_rect().width() < COMPACT_WIDTH
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ThemeMode {
     #[default]
@@ -120,6 +128,10 @@ pub struct UiState {
     pub demo_banner: bool,
     /// The password typed in the Unlock dialog for a file the host read itself (the browser).
     pub unlock_answer: Option<String>,
+    /// The phone layout (set every frame from the window width, see [`COMPACT_WIDTH`]).
+    pub compact: bool,
+    /// Phone layout: the menu (the sidebar) fills the screen.
+    pub menu: bool,
 }
 
 impl Default for UiState {
@@ -145,6 +157,8 @@ impl Default for UiState {
             can_pick_files: true,
             demo_banner: true,
             unlock_answer: None,
+            compact: false,
+            menu: false,
         }
     }
 }
@@ -416,6 +430,10 @@ impl PecuniaApp {
         }
         self.shortcuts(&ctx);
         let t = self.tokens();
+        self.ui.compact = is_compact(&ctx);
+        if !self.ui.compact {
+            self.ui.menu = false;
+        }
 
         egui::Panel::bottom("status")
             .resizable(false)
@@ -428,6 +446,13 @@ impl PecuniaApp {
                 .frame(egui::Frame::new().fill(t.warning_soft).inner_margin(egui::Margin::symmetric(14, 8)))
                 .show(ui, |ui| self.demo_banner(ui, &t));
         }
+        if self.ui.compact {
+            self.compact_ui(ui, &t);
+            dialogs::show(self, &ctx, &t);
+            palette::show(self, &ctx, &t);
+            self.toasts(&ctx, &t);
+            return;
+        }
         if self.ui.sidebar {
             egui::Panel::left("sidebar")
                 .resizable(true)
@@ -436,7 +461,10 @@ impl PecuniaApp {
                 .frame(egui::Frame::new().fill(t.sidebar))
                 .show(ui, |ui| sidebar::show(self, ui, &t));
         }
-        if self.shows_detail() {
+        // A tablet: with the sidebar and the detail pane, the list would be too narrow; the detail takes its place.
+        let room = ctx.content_rect().width() - if self.ui.sidebar { 248.0 } else { 0.0 } - 420.0;
+        let detail_instead = self.shows_detail() && room < 440.0;
+        if self.shows_detail() && !detail_instead {
             egui::Panel::right("detail")
                 .resizable(true)
                 .default_size(420.0)
@@ -444,15 +472,12 @@ impl PecuniaApp {
                 .frame(egui::Frame::new().fill(t.bg))
                 .show(ui, |ui| detail::show(self, ui, &t));
         }
-        egui::CentralPanel::no_frame().frame(egui::Frame::new().fill(t.bg)).show(ui, |ui| match self.session.view.screen {
-            Screen::Overview => overview::show(self, ui, &t),
-            Screen::Transactions => register::show(self, ui, &t),
-            Screen::Review => review::show(self, ui, &t),
-            Screen::Pots => pots::show(self, ui, &t),
-            Screen::Reports => reports::show(self, ui, &t),
-            Screen::Accounts => accounts::show(self, ui, &t),
-            Screen::Rules => lists::rules(self, ui, &t),
-            Screen::Imports => lists::imports(self, ui, &t),
+        egui::CentralPanel::no_frame().frame(egui::Frame::new().fill(t.bg)).show(ui, |ui| {
+            if detail_instead {
+                detail::show(self, ui, &t);
+            } else {
+                self.screen(ui, &t);
+            }
         });
 
         dialogs::show(self, &ctx, &t);
@@ -460,15 +485,79 @@ impl PecuniaApp {
         self.toasts(&ctx, &t);
     }
 
+    fn screen(&mut self, ui: &mut egui::Ui, t: &Tokens) {
+        match self.session.view.screen {
+            Screen::Overview => overview::show(self, ui, t),
+            Screen::Transactions => register::show(self, ui, t),
+            Screen::Review => review::show(self, ui, t),
+            Screen::Pots => pots::show(self, ui, t),
+            Screen::Reports => reports::show(self, ui, t),
+            Screen::Accounts => accounts::show(self, ui, t),
+            Screen::Rules => lists::rules(self, ui, t),
+            Screen::Imports => lists::imports(self, ui, t),
+        }
+    }
+
+    /// The phone layout: a top bar, then one view: the menu, the selected transaction, or the screen.
+    fn compact_ui(&mut self, ui: &mut egui::Ui, t: &Tokens) {
+        egui::Panel::top("compact-top")
+            .resizable(false)
+            .exact_size(48.0)
+            .frame(egui::Frame::new().fill(t.sidebar).inner_margin(egui::Margin::symmetric(6, 0)))
+            .show(ui, |ui| self.top_bar(ui, t));
+        let detail = !self.ui.menu && self.shows_detail();
+        egui::CentralPanel::no_frame().frame(egui::Frame::new().fill(if self.ui.menu { t.sidebar } else { t.bg })).show(ui, |ui| {
+            if self.ui.menu {
+                sidebar::show(self, ui, t);
+            } else if detail {
+                detail::show(self, ui, t);
+            } else {
+                self.screen(ui, t);
+            }
+        });
+    }
+
+    /// Phone layout: the menu button, the book, and New transaction.
+    fn top_bar(&mut self, ui: &mut egui::Ui, t: &Tokens) {
+        let full = ui.max_rect();
+        ui.painter().line_segment([full.left_bottom(), full.right_bottom()], egui::Stroke::new(1.0, t.border));
+        let mut toggle = false;
+        let mut new = false;
+        ui.horizontal_centered(|ui| {
+            let (g, tip) = if self.ui.menu { (icons::Glyph::Close, "Close the menu") } else { (icons::Glyph::Menu, "Menu") };
+            toggle = widgets::icon_button_sized(ui, g, tip, 40.0, false, t).clicked();
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                new = widgets::icon_button_sized(ui, icons::Glyph::Plus, "New transaction", 40.0, false, t).clicked();
+                let demo = self.session.is_demo();
+                let room = ui.available_width() - if demo { 54.0 } else { 6.0 };
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    let name = widgets::elide(ui, self.session.book().name(), theme::bold(15.0), room);
+                    ui.label(egui::RichText::new(name).font(theme::bold(15.0)).color(t.text));
+                    if demo {
+                        widgets::demo_badge(ui, 11.0, t);
+                    }
+                });
+            });
+        });
+        if toggle {
+            self.ui.menu = !self.ui.menu;
+        }
+        if new {
+            self.ui.menu = false;
+            self.new_txn();
+        }
+    }
+
     /// The DEMO banner: what this book is, and how to start a real one.
     fn demo_banner(&mut self, ui: &mut egui::Ui, t: &Tokens) {
         let mut action = None;
         ui.horizontal_wrapped(|ui| {
             widgets::demo_badge(ui, 12.0, t);
-            let text = if self.session.store_path().is_some() {
-                "This book is filled with a made-up household. Its money and payees are not real."
-            } else {
-                "You are looking at a made-up household to try Pecunia. Nothing here is real, and nothing is saved."
+            let text = match (self.session.store_path().is_some(), self.ui.compact) {
+                (true, false) => "This book is filled with a made-up household. Its money and payees are not real.",
+                (true, true) => "A made-up household. Its money is not real.",
+                (false, false) => "You are looking at a made-up household to try Pecunia. Nothing here is real, and nothing is saved.",
+                (false, true) => "A made-up household to try Pecunia. Nothing is saved.",
             };
             ui.label(egui::RichText::new(text).size(13.0).color(t.text));
             if self.session.store_path().is_none() {
@@ -498,6 +587,9 @@ impl PecuniaApp {
             let (r, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
             ui.painter().circle_filled(r.center(), 3.5, dot);
             ui.label(egui::RichText::new(text).size(11.5).color(if self.session.save_error.is_some() { t.danger } else { t.text_dim }));
+            if self.ui.compact {
+                return;
+            }
             if self.session.store_path().is_some() || !self.session.is_demo() {
                 ui.label(egui::RichText::new(self.session.location()).size(11.5).color(t.text_faint)).on_hover_text("Where this book is stored");
             }
@@ -534,7 +626,7 @@ impl PecuniaApp {
                         .inner_margin(egui::Margin::symmetric(14, 8))
                         .shadow(egui::epaint::Shadow { offset: [0, 4], blur: 16, spread: 0, color: t.shadow })
                         .show(ui, |ui| {
-                            ui.set_max_width(560.0);
+                            ui.set_max_width(560.0f32.min(screen.width() - 40.0));
                             ui.horizontal(|ui| {
                                 ui.label(egui::RichText::new(&toast.text).color(if toast.error { t.danger } else { t.text }));
                                 if toast.undo && ui.link(egui::RichText::new("Undo").color(t.accent).strong()).clicked() {
@@ -584,6 +676,7 @@ impl PecuniaApp {
                 self.ui.focus_search = true;
                 self.go(Screen::Transactions);
             }
+            "ui.toggleSidebar" if self.ui.compact => self.ui.menu = !self.ui.menu,
             "ui.toggleSidebar" => self.ui.sidebar = !self.ui.sidebar,
             "ui.rename" => self.open_dialog("rename", json!({})),
             "ui.newAccount" => self.open_dialog("newAccount", json!({})),

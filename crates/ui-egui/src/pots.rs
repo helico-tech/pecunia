@@ -111,7 +111,9 @@ fn title_row(ui: &mut Ui, list: &[PhysicalBalance], t: &Tokens, acts: &mut Vec<A
     let mut row =
         ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(vec2(18.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
     row.label(egui::RichText::new("Pots").font(theme::bold(18.0)).color(t.text));
-    if !list.is_empty() {
+    // Phone layout: only the title and Move money; New account is in the menu.
+    let compact = crate::is_compact(ui.ctx());
+    if !list.is_empty() && !compact {
         let in_pots: Money = list.iter().map(|a| a.in_pots).sum();
         row.add_space(8.0);
         row.label(egui::RichText::new(format!("{} set aside in pots", in_pots.format())).size(12.5).color(t.text_dim));
@@ -120,7 +122,7 @@ fn title_row(ui: &mut Ui, list: &[PhysicalBalance], t: &Tokens, acts: &mut Vec<A
         if !list.is_empty() && widgets::primary_button(ui, "Move money", t).on_hover_text("Move money from one pot to another").clicked() {
             acts.push(Act::Run("ui.potMove", json!({})));
         }
-        if widgets::secondary_button(ui, "New account", t).clicked() {
+        if !compact && widgets::secondary_button(ui, "New account", t).clicked() {
             acts.push(Act::Dialog("newAccount", json!({})));
         }
     });
@@ -196,15 +198,19 @@ fn card_head(ui: &mut Ui, a: &PhysicalBalance, t: &Tokens, acts: &mut Vec<Act>) 
     } else {
         "No pots yet".to_string()
     };
-    let sg = p.layout_no_wrap(sub, theme::body(11.5), t.text_dim);
-    let sw = sg.size().x;
-    p.galley(pos2(rect.right() - sw, cy + 10.0 - sg.size().y / 2.0), sg, t.text_dim);
-    let room = (rect.width() - 40.0 - bw.max(sw) - 16.0).max(40.0);
-    let name = widgets::elide(ui, &a.name, theme::bold(15.0), room);
-    let kind = widgets::elide(ui, a.kind.label(), theme::body(11.5), room);
+    let sw = p.layout_no_wrap(sub.clone(), theme::body(11.5), t.text_dim).size().x;
+    let kw = p.layout_no_wrap(a.kind.label().to_string(), theme::body(11.5), t.text_dim).size().x;
+    let name = widgets::elide(ui, &a.name, theme::bold(15.0), (rect.width() - 40.0 - bw - 16.0).max(40.0));
     let p = ui.painter();
     p.text(pos2(rect.left() + 38.0, cy - 9.0), Align2::LEFT_CENTER, name, theme::bold(15.0), t.text);
-    p.text(pos2(rect.left() + 38.0, cy + 10.0), Align2::LEFT_CENTER, kind, theme::body(11.5), t.text_dim);
+    if 38.0 + kw + 16.0 + sw <= rect.width() {
+        p.text(pos2(rect.right(), cy + 10.0), Align2::RIGHT_CENTER, sub, theme::body(11.5), t.text_dim);
+        p.text(pos2(rect.left() + 38.0, cy + 10.0), Align2::LEFT_CENTER, a.kind.label(), theme::body(11.5), t.text_dim);
+    } else {
+        // A narrow card (a phone): the pots line replaces the account kind.
+        let sub = widgets::elide(ui, &sub, theme::body(11.5), rect.width() - 38.0);
+        ui.painter().text(pos2(rect.left() + 38.0, cy + 10.0), Align2::LEFT_CENTER, sub, theme::body(11.5), t.text_dim);
+    }
     widgets::a11y(&resp, &a.name);
     if resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Show its transactions").clicked() {
         acts.push(Act::Show(a.account));

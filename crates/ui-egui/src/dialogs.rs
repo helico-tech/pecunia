@@ -395,17 +395,24 @@ pub fn show(app: &mut PecuniaApp, ctx: &egui::Context, t: &Tokens) {
         .shadow(egui::epaint::Shadow { offset: [0, 12], blur: 36, spread: 0, color: t.shadow });
     let modal = egui::Modal::new(egui::Id::new("dialog")).frame(frame).backdrop_color(egui::Color32::from_black_alpha(if t.dark { 120 } else { 60 }));
     let session = &app.session;
-    let resp = modal.show(ctx, |ui| match &mut dialog {
-        Dialog::NewTxn(f) => new_txn(session, ui, f, t),
-        Dialog::NewAccount(f) => new_account(session, ui, f, t),
-        Dialog::EditAccount(f) => edit_account(session, ui, f, t),
-        Dialog::PotMove(f) => pot_move(session, ui, f, t),
-        Dialog::Split(f) => split(session, ui, f, t),
-        Dialog::Import(f) => import(session, ui, f, t),
-        Dialog::NewBook(f) => new_book(ui, f, t),
-        Dialog::Rename(f) => rename(ui, f, t),
-        Dialog::Unlock(f) => unlock(ui, f, t),
-        Dialog::SetPassword(f) => set_password(session, ui, f, t),
+    // A dialog taller than the screen (a phone, a long import preview) scrolls.
+    let tall = (ctx.content_rect().height() - 80.0).max(200.0);
+    let resp = modal.show(ctx, |ui| {
+        egui::ScrollArea::vertical()
+            .max_height(tall)
+            .show(ui, |ui| match &mut dialog {
+                Dialog::NewTxn(f) => new_txn(session, ui, f, t),
+                Dialog::NewAccount(f) => new_account(session, ui, f, t),
+                Dialog::EditAccount(f) => edit_account(session, ui, f, t),
+                Dialog::PotMove(f) => pot_move(session, ui, f, t),
+                Dialog::Split(f) => split(session, ui, f, t),
+                Dialog::Import(f) => import(session, ui, f, t),
+                Dialog::NewBook(f) => new_book(ui, f, t),
+                Dialog::Rename(f) => rename(ui, f, t),
+                Dialog::Unlock(f) => unlock(ui, f, t),
+                Dialog::SetPassword(f) => set_password(session, ui, f, t),
+            })
+            .inner
     });
     let outcome = if resp.should_close() { Outcome::Close } else { resp.inner };
     match outcome {
@@ -506,7 +513,20 @@ fn buttons(ui: &mut Ui, main: &str, t: &Tokens) -> (bool, bool) {
     out
 }
 
+/// Sets a dialog's width: `w`, or less on a narrow screen.
+fn fit(ui: &mut Ui, w: f32) {
+    let room = ui.ctx().content_rect().width() - 64.0;
+    ui.set_width(w.min(room).max(200.0));
+}
+
+/// Two fields side by side; on a phone, one below the other.
 fn two_columns(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut Ui)) {
+    if crate::is_compact(ui.ctx()) {
+        left(ui);
+        ui.add_space(8.0);
+        right(ui);
+        return;
+    }
     let w = (ui.available_width() - 12.0) / 2.0;
     ui.horizontal_top(|ui| {
         ui.vertical(|ui| {
@@ -521,7 +541,7 @@ fn two_columns(ui: &mut Ui, left: impl FnOnce(&mut Ui), right: impl FnOnce(&mut 
 }
 
 fn new_txn(s: &Session, ui: &mut Ui, f: &mut NewTxnForm, t: &Tokens) -> Outcome {
-    ui.set_width(520.0);
+    fit(ui, 520.0);
     if title_bar(ui, "New transaction", t) {
         return Outcome::Close;
     }
@@ -594,7 +614,7 @@ const NEW_KINDS: [AccountKind; 9] = [
 ];
 
 fn new_account(s: &Session, ui: &mut Ui, f: &mut NewAccountForm, t: &Tokens) -> Outcome {
-    ui.set_width(560.0);
+    fit(ui, 560.0);
     if title_bar(ui, "New account", t) {
         return Outcome::Close;
     }
@@ -716,7 +736,7 @@ fn new_account(s: &Session, ui: &mut Ui, f: &mut NewAccountForm, t: &Tokens) -> 
 }
 
 fn edit_account(s: &Session, ui: &mut Ui, f: &mut EditAccountForm, t: &Tokens) -> Outcome {
-    ui.set_width(520.0);
+    fit(ui, 520.0);
     let Some(a) = s.book().account(f.id).cloned() else { return Outcome::Close };
     if title_bar(ui, &format!("{} · {}", a.name, a.kind.label()), t) {
         return Outcome::Close;
@@ -819,7 +839,7 @@ fn edit_account(s: &Session, ui: &mut Ui, f: &mut EditAccountForm, t: &Tokens) -
 }
 
 fn pot_move(s: &Session, ui: &mut Ui, f: &mut PotMoveForm, t: &Tokens) -> Outcome {
-    ui.set_width(480.0);
+    fit(ui, 480.0);
     if title_bar(ui, "Move money between pots", t) {
         return Outcome::Close;
     }
@@ -874,7 +894,7 @@ fn pot_move(s: &Session, ui: &mut Ui, f: &mut PotMoveForm, t: &Tokens) -> Outcom
 }
 
 fn split(s: &Session, ui: &mut Ui, f: &mut SplitForm, t: &Tokens) -> Outcome {
-    ui.set_width(540.0);
+    fit(ui, 540.0);
     if title_bar(ui, "Split transaction", t) {
         return Outcome::Close;
     }
@@ -938,7 +958,7 @@ fn split(s: &Session, ui: &mut Ui, f: &mut SplitForm, t: &Tokens) -> Outcome {
 }
 
 fn import(s: &Session, ui: &mut Ui, f: &mut ImportForm, t: &Tokens) -> Outcome {
-    ui.set_width(600.0);
+    fit(ui, 600.0);
     if title_bar(ui, &format!("Import {}", f.file.name()), t) {
         return Outcome::Close;
     }
@@ -1124,7 +1144,7 @@ fn mapping(ui: &mut Ui, f: &mut ImportForm, p: &Json, t: &Tokens) -> Outcome {
 }
 
 fn new_book(ui: &mut Ui, f: &mut NewBookForm, t: &Tokens) -> Outcome {
-    ui.set_width(440.0);
+    fit(ui, 440.0);
     if !f.touched {
         f.categories = true;
         f.touched = true;
@@ -1176,7 +1196,7 @@ fn new_book(ui: &mut Ui, f: &mut NewBookForm, t: &Tokens) -> Outcome {
 }
 
 fn rename(ui: &mut Ui, f: &mut RenameForm, t: &Tokens) -> Outcome {
-    ui.set_width(400.0);
+    fit(ui, 400.0);
     if title_bar(ui, "Rename book", t) {
         return Outcome::Close;
     }
@@ -1198,7 +1218,7 @@ fn rename(ui: &mut Ui, f: &mut RenameForm, t: &Tokens) -> Outcome {
 }
 
 fn unlock(ui: &mut Ui, f: &mut UnlockForm, t: &Tokens) -> Outcome {
-    ui.set_width(420.0);
+    fit(ui, 420.0);
     if title_bar(ui, "Password needed", t) {
         return Outcome::Close;
     }
@@ -1225,7 +1245,7 @@ fn unlock(ui: &mut Ui, f: &mut UnlockForm, t: &Tokens) -> Outcome {
 }
 
 fn set_password(s: &Session, ui: &mut Ui, f: &mut SetPasswordForm, t: &Tokens) -> Outcome {
-    ui.set_width(440.0);
+    fit(ui, 440.0);
     let change = s.encrypted();
     if title_bar(ui, if change { "Change the password" } else { "Protect with a password" }, t) {
         return Outcome::Close;

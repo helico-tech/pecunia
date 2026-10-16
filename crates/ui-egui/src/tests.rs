@@ -7,7 +7,16 @@ use pecunia_engine::{Screen, Session};
 use crate::PecuniaApp;
 
 fn harness(app: PecuniaApp) -> Harness<'static, PecuniaApp> {
-    Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+    harness_sized(app, egui::vec2(1440.0, 900.0))
+}
+
+/// A phone: 390 × 844 points.
+fn phone(app: PecuniaApp) -> Harness<'static, PecuniaApp> {
+    harness_sized(app, egui::vec2(390.0, 844.0))
+}
+
+fn harness_sized(app: PecuniaApp, size: egui::Vec2) -> Harness<'static, PecuniaApp> {
+    Harness::builder().with_size(size).build_ui_state(
         |ui, app: &mut PecuniaApp| {
             let ctx = ui.ctx().clone();
             app.logic(&ctx);
@@ -155,4 +164,50 @@ fn fonts_are_ready_only_after_the_first_frame() {
     let mut h = harness(app);
     h.run_steps(1);
     assert!(h.state().fonts_ready());
+}
+
+#[test]
+fn a_phone_gets_one_view_at_a_time() {
+    let mut h = phone(sample());
+    h.run_steps(3);
+    assert!(h.state().ui.compact);
+    // No sidebar until the menu opens.
+    assert!(h.query_by_label("All transactions").is_none(), "the menu is closed");
+    h.get_by_label("Menu").click();
+    h.run_steps(2);
+    assert!(h.state().ui.menu);
+    h.get_by_label("All transactions").click();
+    h.run_steps(2);
+    assert_eq!(h.state().session.view.screen, Screen::Transactions);
+    assert!(!h.state().ui.menu, "picking a screen closes the menu");
+    h.get_by_label("Menu").click();
+    h.run_steps(2);
+    h.get_by_label("Pots").click();
+    h.run_steps(2);
+    assert_eq!(h.state().session.view.screen, Screen::Pots);
+    assert!(!h.state().ui.menu, "picking a screen closes the menu");
+
+    // A transaction's details replace the list; Back returns to it.
+    h.state_mut().go(Screen::Transactions);
+    h.run_steps(2);
+    let id = h.state().session.book().txns().next().map(|t| t.id);
+    h.state_mut().select(id);
+    h.run_steps(2);
+    assert!(h.query_by_label("Back").is_some());
+    h.get_by_label("Back").click();
+    h.run_steps(2);
+    assert_eq!(h.state().session.selection, None);
+
+    for screen in Screen::ALL {
+        h.state_mut().go(screen);
+        h.run_steps(2);
+    }
+}
+
+#[test]
+fn a_wide_window_has_no_phone_menu() {
+    let mut h = harness(sample());
+    h.run_steps(3);
+    assert!(!h.state().ui.compact);
+    assert!(h.query_by_label("Menu").is_none());
 }

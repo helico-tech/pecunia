@@ -47,8 +47,10 @@ pub fn rules(app: &mut PecuniaApp, ui: &mut Ui, t: &Tokens) {
         return;
     }
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        // Phone layout: the note goes under the payee instead of beside it.
+        let compact = app.ui.compact;
         for r in &rules {
-            let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::hover());
+            let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), if compact { 50.0 } else { 40.0 }), Sense::hover());
             ui.painter().line_segment(
                 [pos2(rect.left() + 20.0, rect.bottom()), pos2(rect.right(), rect.bottom())],
                 Stroke::new(1.0, t.border.gamma_multiply(0.7)),
@@ -61,14 +63,25 @@ pub fn rules(app: &mut PecuniaApp, ui: &mut Ui, t: &Tokens) {
                 (None, Some(i)) => i.clone(),
                 (None, None) => String::new(),
             };
-            let what = widgets::elide(ui, &what, theme::body(13.5), rect.width() * 0.38);
-            ui.painter().text(pos2(rect.left() + 52.0, cy), Align2::LEFT_CENTER, what, theme::body(13.5), if r.mixed { t.text_dim } else { t.text });
+            let room = if compact { rect.width() - 52.0 - 200.0 } else { rect.width() * 0.38 };
+            let what = widgets::elide(ui, &what, theme::body(13.5), room);
+            let what_y = if compact { cy - 8.0 } else { cy };
+            ui.painter().text(
+                pos2(rect.left() + 52.0, what_y),
+                Align2::LEFT_CENTER,
+                what,
+                theme::body(13.5),
+                if r.mixed { t.text_dim } else { t.text },
+            );
             let mut note = format!("{} · used {}×", if r.origin == RuleOrigin::Learned { "learned" } else { "yours" }, r.uses);
             if r.mixed {
-                note.push_str(" · mixed answers, not used");
+                note.push_str(if compact { " · mixed" } else { " · mixed answers, not used" });
             }
-            ui.painter().text(pos2(rect.left() + 52.0 + rect.width() * 0.4, cy), Align2::LEFT_CENTER, note, theme::body(11.5), t.text_faint);
-            let right = Rect::from_min_max(pos2(rect.right() - 340.0, rect.top()), pos2(rect.right() - 16.0, rect.bottom()));
+            let note_at = if compact { pos2(rect.left() + 52.0, cy + 9.0) } else { pos2(rect.left() + 52.0 + rect.width() * 0.4, cy) };
+            let note = widgets::elide(ui, &note, theme::body(11.5), room);
+            ui.painter().text(note_at, Align2::LEFT_CENTER, note, theme::body(11.5), t.text_faint);
+            let right =
+                Rect::from_min_max(pos2(rect.right() - if compact { 196.0 } else { 340.0 }, rect.top()), pos2(rect.right() - 16.0, rect.bottom()));
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(right).layout(egui::Layout::right_to_left(egui::Align::Center)));
             if widgets::icon_button(&mut child, Glyph::Trash, "Delete rule", t).clicked() {
                 actions.push(("rule.delete", json!({ "id": r.id.0 })));

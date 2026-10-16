@@ -51,9 +51,10 @@ pub fn show(app: &mut PecuniaApp, ui: &mut Ui, t: &Tokens) {
     ui.painter().line_segment([full.left_top(), full.left_bottom()], Stroke::new(1.0, t.border));
     let mut actions: Vec<(&'static str, Json)> = Vec::new();
     let mut close = false;
-    header(ui, &book, &txn, t, &mut actions, &mut close);
+    header(ui, &book, &txn, app.ui.compact, t, &mut actions, &mut close);
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        egui::Frame::new().inner_margin(egui::Margin { left: 24, right: 24, top: 18, bottom: 24 }).show(ui, |ui| {
+        let side = if app.ui.compact { 16 } else { 24 };
+        egui::Frame::new().inner_margin(egui::Margin { left: side, right: side, top: 18, bottom: 24 }).show(ui, |ui| {
             ui.set_width(ui.available_width());
             summary(app, ui, &book, &txn, t, &mut actions);
             if let Some(kind) = book.review_kind(&txn) {
@@ -76,12 +77,12 @@ pub fn show(app: &mut PecuniaApp, ui: &mut Ui, t: &Tokens) {
     }
 }
 
-fn header(ui: &mut Ui, book: &Book, txn: &Txn, t: &Tokens, actions: &mut Vec<(&'static str, Json)>, close: &mut bool) {
+fn header(ui: &mut Ui, book: &Book, txn: &Txn, compact: bool, t: &Tokens, actions: &mut Vec<(&'static str, Json)>, close: &mut bool) {
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 52.0), Sense::hover());
     ui.painter().line_segment([rect.left_bottom(), rect.right_bottom()], Stroke::new(1.0, t.border));
-    let inner = rect.shrink2(vec2(20.0, 0.0));
+    let inner = rect.shrink2(vec2(if compact { 8.0 } else { 20.0 }, 0.0));
     let mut right = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::right_to_left(egui::Align::Center)));
-    if widgets::icon_button(&mut right, Glyph::Close, "Close (Esc)", t).clicked() {
+    if !compact && widgets::icon_button(&mut right, Glyph::Close, "Close (Esc)", t).clicked() {
         *close = true;
     }
     let more = widgets::icon_button(&mut right, Glyph::More, "More", t);
@@ -104,6 +105,10 @@ fn header(ui: &mut Ui, book: &Book, txn: &Txn, t: &Tokens, actions: &mut Vec<(&'
         }
     });
     let mut left = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(egui::Layout::left_to_right(egui::Align::Center)));
+    // Phone layout: the details fill the screen, so Back goes to the list.
+    if compact && widgets::icon_button_sized(&mut left, Glyph::ChevronLeft, "Back", 40.0, false, t).clicked() {
+        *close = true;
+    }
     let (r, _) = left.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
     icons::status(left.painter(), r.center(), 15.0, txn.status, t);
     left.label(egui::RichText::new(txn.status.label()).size(12.5).color(t.text_dim));
@@ -287,7 +292,9 @@ fn properties(app: &mut PecuniaApp, ui: &mut Ui, book: &Book, txn: &Txn, t: &Tok
     }
     if txn.status != TxnStatus::Reviewed && book.review_kind(txn).is_none() {
         prop_row(ui, "", t, |ui| {
-            if widgets::secondary_button(ui, "Mark as checked  ⌘↩", t).clicked() {
+            // A phone has no keyboard shortcut to show.
+            let label = if crate::is_compact(ui.ctx()) { "Mark as checked" } else { "Mark as checked  ⌘↩" };
+            if widgets::secondary_button(ui, label, t).clicked() {
                 actions.push(("txn.confirm", json!({ "id": id })));
             }
         });

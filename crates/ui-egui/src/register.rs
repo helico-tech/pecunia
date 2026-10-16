@@ -254,39 +254,31 @@ fn toolbar(app: &mut PecuniaApp, ui: &mut Ui, t: &Tokens) {
         icons::account(row.painter(), pos2(row.cursor().left() + 9.0, rect.center().y), 18.0, a.kind, a.group, t);
         row.add_space(24.0);
     }
-    row.label(egui::RichText::new(title(app)).font(theme::bold(18.0)).color(t.text));
+    let compact = app.ui.compact;
     let mut actions: Vec<(&'static str, Json)> = Vec::new();
+    // Phone layout: the search box gets a row of its own, below the title.
+    let edit = f.account.filter(|a| book.account(*a).is_some_and(|a| a.is_physical()));
+    let room = row.available_width() - if edit.is_some() { 110.0 } else { 0.0 } - if compact { 0.0 } else { 260.0 };
+    let name = widgets::elide(&row, &title(app), theme::bold(18.0), room.max(80.0));
+    row.label(egui::RichText::new(name).font(theme::bold(18.0)).color(t.text));
     row.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        let te = egui::Frame::new()
-            .fill(t.surface)
-            .stroke(Stroke::new(1.0, t.border_strong))
-            .corner_radius(7)
-            .inner_margin(egui::Margin::symmetric(8, 4))
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let (r, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
-                    icons::glyph(ui.painter(), r.center(), 12.0, Glyph::Search, t.text_faint);
-                    ui.add(egui::TextEdit::singleline(&mut app.ui.search).frame(egui::Frame::NONE).hint_text("Search  ⌘F").desired_width(200.0))
-                })
-                .inner
-            })
-            .inner;
-        if app.ui.focus_search {
-            te.request_focus();
-            app.ui.focus_search = false;
+        if !compact {
+            search_box(app, ui, 200.0, t, &mut actions);
         }
-        if te.changed() {
-            actions.push(("view.filter", json!({ "text": app.ui.search })));
-        }
-        if let Some(a) = f.account
-            && book.account(a).is_some_and(|a| a.is_physical())
-        {
+        if let Some(a) = edit {
             ui.add_space(8.0);
             if widgets::secondary_button(ui, "Edit account", t).clicked() {
                 actions.push(("ui.editAccount", json!({ "id": a.0 })));
             }
         }
     });
+    if compact {
+        let (rect, _) = ui.allocate_exact_size(vec2(full_w, 40.0), Sense::hover());
+        let mut row =
+            ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(vec2(16.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        let w = row.available_width() - 40.0;
+        search_box(app, &mut row, w, t, &mut actions);
+    }
     // Row 2: filters.
     let (rect2, _) = ui.allocate_exact_size(vec2(full_w, 40.0), Sense::hover());
     ui.painter().line_segment([rect2.left_bottom(), rect2.right_bottom()], Stroke::new(1.0, t.border));
@@ -323,7 +315,7 @@ fn toolbar(app: &mut PecuniaApp, ui: &mut Ui, t: &Tokens) {
     let review = widgets::pill_outlined(
         &mut row,
         |p, c| icons::glyph(p, c, 12.0, Glyph::Inbox, if on { t.warning } else { t.text_faint }),
-        "Waiting in Review",
+        if compact { "In Review" } else { "Waiting in Review" },
         !on,
         t,
     );
@@ -335,12 +327,41 @@ fn toolbar(app: &mut PecuniaApp, ui: &mut Ui, t: &Tokens) {
         actions.push(("view.clearFilter", json!({})));
     }
     row.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        if compact {
+            return;
+        }
         let rows = current_rows(app);
         let n = rows.len();
         ui.label(egui::RichText::new(format!("{n} transaction{}", if n == 1 { "" } else { "s" })).size(12.0).color(t.text_dim));
     });
     for (id, p) in actions {
         app.run_any(id, p);
+    }
+}
+
+/// The search box (sends `view.filter` as the text changes); `width` is the text's width.
+fn search_box(app: &mut PecuniaApp, ui: &mut Ui, width: f32, t: &Tokens, actions: &mut Vec<(&'static str, Json)>) {
+    let hint = if app.ui.compact { "Search" } else { "Search  ⌘F" };
+    let te = egui::Frame::new()
+        .fill(t.surface)
+        .stroke(Stroke::new(1.0, t.border_strong))
+        .corner_radius(7)
+        .inner_margin(egui::Margin::symmetric(8, 4))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let (r, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
+                icons::glyph(ui.painter(), r.center(), 12.0, Glyph::Search, t.text_faint);
+                ui.add(egui::TextEdit::singleline(&mut app.ui.search).frame(egui::Frame::NONE).hint_text(hint).desired_width(width))
+            })
+            .inner
+        })
+        .inner;
+    if app.ui.focus_search {
+        te.request_focus();
+        app.ui.focus_search = false;
+    }
+    if te.changed() {
+        actions.push(("view.filter", json!({ "text": app.ui.search })));
     }
 }
 

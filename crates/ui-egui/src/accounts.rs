@@ -175,7 +175,9 @@ fn toolbar(ui: &mut Ui, book: &Book, tree: &AccountTree, show_closed: bool, show
     ui.painter().line_segment([rect.left_bottom(), rect.right_bottom()], Stroke::new(1.0, t.border));
     let mut row =
         ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink2(vec2(18.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
-    row.label(egui::RichText::new("Accounts and categories").font(theme::bold(18.0)).color(t.text));
+    // Phone layout: a shorter title, so the buttons fit beside it.
+    let title = if crate::is_compact(ui.ctx()) { "Accounts" } else { "Accounts and categories" };
+    row.label(egui::RichText::new(title).font(theme::bold(18.0)).color(t.text));
     row.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         let missing: Vec<&'static Entry> = catalogue::ENTRIES
             .iter()
@@ -287,6 +289,9 @@ fn section(ui: &mut Ui, rect: Rect, group: Group, total: Money, acts: &mut Vec<A
     let tg = p.layout_no_wrap(total.format(), theme::bold(12.5), t.text);
     let tw = tg.size().x;
     p.galley(pos2(right - tw, cy - tg.size().y / 2.0), tg, t.text);
+    if crate::is_compact(ui.ctx()) {
+        return;
+    }
     let caption = match group {
         Group::Have => "today",
         Group::Owe => "owed today",

@@ -80,7 +80,7 @@ pub fn show(app: &mut PecuniaApp, ctx: &egui::Context, t: &Tokens) {
         .area(egui::Modal::default_area(egui::Id::new("palette-area")).anchor(Align2::CENTER_TOP, vec2(0.0, screen.height() * 0.14)));
     let book = app.session.book().clone();
     let resp = modal.show(ctx, |ui| {
-        ui.set_width(600.0);
+        ui.set_width(600.0f32.min(screen.width() - 40.0));
         ui.horizontal(|ui| {
             let (r, _) = ui.allocate_exact_size(vec2(24.0, 32.0), Sense::hover());
             icons::glyph(ui.painter(), r.center(), 14.0, Glyph::Search, t.text_faint);

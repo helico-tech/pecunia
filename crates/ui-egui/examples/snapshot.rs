@@ -2,7 +2,7 @@
 //!
 //! `cargo run -p pecunia-ui-egui --example snapshot -- [--sample] [--in file.pecunia]
 //!  [--size 1440x900] [--scale 2] [--dark] [--cmd 'id={json}']... [--dialog 'name={json}']
-//!  [--palette 'query'] [--no-sidebar] out.png`
+//!  [--palette 'query'] [--no-sidebar] [--menu (the phone menu)] out.png`
 
 use pecunia_engine::Session;
 use pecunia_ui_egui::{PecuniaApp, ThemeMode};
@@ -18,6 +18,7 @@ fn main() {
     let mut dialog: Option<String> = None;
     let mut palette: Option<String> = None;
     let mut sidebar = true;
+    let mut menu = false;
     let mut out = "snapshot.png".to_string();
     let mut sample = false;
     let mut i = 0;
@@ -46,6 +47,7 @@ fn main() {
             }
             "--dark" => dark = true,
             "--no-sidebar" => sidebar = false,
+            "--menu" => menu = true,
             "--dialog" => {
                 i += 1;
                 dialog = args.get(i).cloned();
@@ -79,6 +81,7 @@ fn main() {
     }
     app.ui.theme = if dark { ThemeMode::Dark } else { ThemeMode::Light };
     app.ui.sidebar = sidebar;
+    app.ui.menu = menu;
     app.route();
     app.ui.toasts.clear();
     if let Some(d) = &dialog {
