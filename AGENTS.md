@@ -19,7 +19,7 @@ data file) follows `helico/openissue`. A book is one `.pecunia` JSON file.
 | Layer | Crate | Job |
 |---|---|---|
 | L0 | `model` | Money, accounts, transactions, rules, validated edits on `Book`, repair, diff, payees, dedup, ingest, classifier, Review, register, reports. No clock, no I/O. |
-| L0 | `formats` | Bank-file parsers: CSV profiles, CAMT.053, MT940. Bytes in, rows out. |
+| L1 | `formats` | Bank-file parsers: CSV profiles, CAMT.053, MT940. Bytes in, rows out. |
 | L1 | `store` | The `Store` trait and its backends (memory, JSON file). |
 | L2 | `engine` | `Session`: undo, autosave, external-change reload, **command registry**, view state, sample book. |
 | L3 | `mcp` | MCP server: every command as a tool. |

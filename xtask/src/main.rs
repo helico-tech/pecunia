@@ -19,7 +19,7 @@ use serde_json::Value;
 /// Workspace crates and their layer. A crate may depend on crates in strictly lower layers.
 const LAYERS: &[(&str, u8)] = &[
     ("pecunia-model", 0),
-    ("pecunia-formats", 0),
+    ("pecunia-formats", 1),
     ("pecunia-store", 1),
     ("pecunia-engine", 2),
     ("pecunia-mcp", 3),

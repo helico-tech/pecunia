@@ -13,7 +13,7 @@ server and a browser build, all running the same commands. OpenIssue itself foll
 ## Decision
 - Use OpenIssue's layers: `model` → `store` → `engine` (command registry, `Session`) → `mcp` /
   `ui-egui` → apps (`pecunia`, `pecunia-cli`, `pecunia-web`), checked by `cargo xtask layers`.
-  Bank-file parsing is its own L0 crate, `formats`, next to `model`.
+  Bank-file parsing is its own crate, `formats` (L1, on top of `model`).
 - Every user-visible action is a `CommandSpec`. Production crates deny `unwrap`, `expect`,
   `panic` and indexing on input; `unsafe` is forbidden. Icons are drawn in code.
 - Port budget.rs's pure domain: money, the ledger with pots (ADR 0003), payee normalisation,

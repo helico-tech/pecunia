@@ -133,6 +133,8 @@ pub struct EditAccountForm {
     pub goal_date: String,
     pub balance: String,
     pub balance_date: String,
+    /// The starting balance and date when the dialog opened; saving sets it only when it changed.
+    balance_was: (String, String),
     pub value: String,
     pub closed: bool,
     pub error: Option<String>,
@@ -165,6 +167,7 @@ impl EditAccountForm {
             description: a.description.clone(),
             goal: a.goal.map(|g| g.format_plain()).unwrap_or_default(),
             goal_date: a.goal_date.map(|d| d.to_string()).unwrap_or_default(),
+            balance_was: (balance.clone(), balance_date.clone()),
             balance,
             balance_date,
             value: String::new(),
@@ -735,7 +738,7 @@ fn edit_account(s: &Session, ui: &mut Ui, f: &mut EditAccountForm, t: &Tokens) -
                     p["goalDate"] = if f.goal_date.trim().is_empty() { Json::Null } else { json!(f.goal_date.trim()) };
                 }
                 let mut cmds = vec![("account.update", p)];
-                if physical_or_pot {
+                if physical_or_pot && (f.balance.trim(), f.balance_date.trim()) != (f.balance_was.0.trim(), f.balance_was.1.trim()) {
                     let amount = if f.balance.trim().is_empty() { "0".to_string() } else { f.balance.clone() };
                     cmds.push(("account.setBalance", json!({ "id": f.id.0, "amount": amount, "date": f.balance_date.trim() })));
                 }
