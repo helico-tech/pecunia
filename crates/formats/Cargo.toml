@@ -1,0 +1,16 @@
+[package]
+name = "pecunia-formats"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Pecunia bank-file parsers: the CSV layouts of Dutch banks, CAMT.053 and MT940. Bytes in, rows out."
+
+[lints]
+workspace = true
+
+[dependencies]
+pecunia-model = { workspace = true }
+chrono = { workspace = true }
+encoding_rs = { workspace = true }
+regex = { workspace = true }
+roxmltree = { workspace = true }
