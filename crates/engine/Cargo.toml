@@ -1,0 +1,23 @@
+[package]
+name = "pecunia-engine"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Pecunia engine: Session, undo, autosave, command registry, view state, sample book"
+
+[lints]
+workspace = true
+
+[dependencies]
+pecunia-model = { workspace = true }
+pecunia-store = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+web-time = { workspace = true }
+chrono = { workspace = true }
+base64 = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

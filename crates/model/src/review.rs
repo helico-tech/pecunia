@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::book::Book;
 use crate::classify::counter_account;
@@ -11,7 +11,7 @@ use crate::types::*;
 use crate::{Result, invalid};
 
 /// The tab an item is on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReviewKind {
     /// Looks like a row already in the books from another file.
