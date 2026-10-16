@@ -10,7 +10,9 @@ data file) follows `helico/openissue`. A book is one `.pecunia` JSON file.
 - `cargo xtask ci` — fmt, clippy `-D warnings`, all tests, layering. Run before every commit.
 - `cargo run -p pecunia -- [file.pecunia | --sample]` — the desktop app.
 - `cargo run -p pecunia-cli -- help` — the CLI; `pecunia-cli mcp <file>` is the MCP server.
-- `cargo xtask bundle` — `target/release/bundle/Pecunia.app`. `cargo xtask web` — the browser app in
+- `cargo xtask bundle [--universal] [--dmg]` — `target/release/bundle/Pecunia.app`; `--dmg` also writes the
+  `.dmg` and CLI archive to `target/dist/`. `cargo xtask package-linux` / `package-windows` — the Linux tarball
+  and Windows zip (run on that OS). Release: [below](#releases). `cargo xtask web` — the browser app in
   `target/web/` (deploy: `npx wrangler deploy --config apps/pecunia-web/wrangler.toml`).
 - **Look at UI changes:** `cargo run -p pecunia-ui-egui --example snapshot -- --sample [--dark] [--cmd 'id={json}'] out.png`, then read the PNG.
 - `PECUNIA_DATA_DIR=/tmp/x` keeps the app's prefs and default book out of your home folder while testing.
@@ -43,6 +45,16 @@ Details: [docs/architecture.md](docs/architecture.md). Decisions: [docs/adr/](do
 - **Storage goes through `Store` only.** **The UI is thin**: it reads `Session` and acts through commands.
 - **No network.** No transaction data leaves the machine (ADR 0004). Tests and samples use synthetic
   bank data only; never commit real bank exports.
+
+## Releases
+- Bump `version` in the root `Cargo.toml`, commit, then `git tag vX.Y.Z && git push --tags`.
+  `.github/workflows/release.yml` builds the universal macOS `.dmg`, the macOS CLI archive, the Linux
+  x86_64/arm64 tarballs and the Windows x86_64 zip, and publishes them as a GitHub Release with
+  `SHA256SUMS.txt` and `.github/release-notes.md`. The tag must match the version.
+- The builds are not signed or notarised yet (issue 0007). A tag also publishes the web app's image
+  (ghcr.io/helico-tech/pecunia-web) and deploys pecunia.helico.app when the Cloudflare secrets are set.
+- The app icon files in `packaging/` are committed (CI has no GPU to render them); after changing
+  the app icon, run `cargo xtask icon` on a Mac and commit the result.
 
 ## Work
 Work items and decisions live in the repo: `work/queue.md` (next up), `work/epics/`, `work/issues/`,

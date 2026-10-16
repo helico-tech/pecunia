@@ -20,7 +20,7 @@ policy, and one data file per book (ADR 0002).
 | apps | `apps/pecunia` | eframe/wgpu window, native macOS menu, file dialogs, prefs and recent books, default book, quit through `craft-quit`. |
 | apps | `apps/pecunia-cli` | `init`, `accounts`, `add-account`, `import`, `list`, `show`, `add`, `review`, `answer`, `report`, `run`, `commands`, `mcp`. |
 | apps | `apps/pecunia-web` | The same UI as wasm (https://pecunia.helico.app). The book is a local file through the File System Access API; bank files come in through the browser's file picker (ADR 0005). |
-| — | `xtask` | `ci`, `layers`, `bundle`, `package-*`, `web`, `icon`. |
+| — | `xtask` | `ci`, `layers`, `bundle [--universal] [--dmg]` (macOS `.app`, `.dmg`, CLI archive), `package-linux`, `package-windows` (the release downloads in `target/dist/`, built by `.github/workflows/release.yml` on a `vX.Y.Z` tag), `web`, `icon`. |
 
 ## The books (ADR 0003)
 

@@ -31,6 +31,18 @@ Open **https://pecunia.helico.app** in Chrome or Edge. Pick a `.pecunia` file on
 server. Bank files are read in the browser. Firefox and Safari can't edit local files yet, so
 there you get the sample household, not saved.
 
+## Download
+
+Get the latest build from [Releases](https://github.com/helico-tech/pecunia/releases/latest). The
+repository is private for now, so you only see the releases if you have access to it.
+
+- **macOS** (Apple Silicon and Intel): `Pecunia-…-macos-universal.dmg`. Drag Pecunia to
+  Applications. It isn't notarised yet, so the first time, right-click the app and choose **Open**.
+- **Linux** (x86_64, arm64): `pecunia-…-linux-<arch>.tar.gz`. Unpack it and run `./pecunia`.
+- **Windows** (x86_64): `pecunia-…-windows-x86_64.zip`. Unzip it and run `pecunia.exe`
+  (not code-signed yet, so SmartScreen may ask you to confirm: More info › Run anyway).
+- The command line tool alone: `pecunia-cli-…-macos-universal.tar.gz` (it's also in all of the above).
+
 ## Build and run
 
 You need Rust 1.95 or later (`rustup update`) and, for the `.app`, the Xcode Command Line Tools.
