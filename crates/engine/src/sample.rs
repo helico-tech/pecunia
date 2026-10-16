@@ -97,10 +97,14 @@ fn build(now: i64) -> pecunia_model::Result<Book> {
     let mut rng = Lcg(42);
     let rows = rows(&a, start, today, &mut rng);
     let (old, recent): (Vec<_>, Vec<_>) = rows.into_iter().partition(|(_, r)| r.date < cutoff);
-    import_round(&mut b, &a, &old, "2025", now)?;
+    // ING first: once its transfers are answered, the savings and card files find their other halves.
+    import_round(&mut b, &a, &[a.ing], &old, "year", now)?;
+    answer_transfers(&mut b, &a, true)?;
+    import_round(&mut b, &a, &[a.spaar, a.card], &old, "year", now)?;
     answer_everything(&mut b, &a)?;
-    import_round(&mut b, &a, &recent, "recent", now)?;
+    import_round(&mut b, &a, &[a.ing], &recent, "recent", now)?;
     answer_transfers(&mut b, &a, false)?;
+    import_round(&mut b, &a, &[a.spaar, a.card], &recent, "recent", now)?;
 
     // A copy of one supermarket row from another export of the same account: a possible duplicate.
     if let Some((_, r)) = recent.iter().find(|(acct, r)| *acct == a.ing && r.description.contains("Albert Heijn")) {
@@ -120,6 +124,11 @@ fn build(now: i64) -> pecunia_model::Result<Book> {
                 let amount = Money(rng.cents(8, 30));
                 b.add_txn(NewTxn { date, payee: "Market".into(), from: a.wallet, to: groceries, amount, note: String::new(), who: None }, now)?;
             }
+        }
+        let payday = day(month, 25);
+        if payday <= today && payday >= start {
+            let ing_free = b.tree().own_leaf(a.ing)?;
+            b.pot_move(ing_free, a.bills, Money(130_000), payday, "Fixed costs for next month", now)?;
         }
         let date = day(month, 27);
         if date <= today {
@@ -207,8 +216,17 @@ fn rows(a: &Accounts, start: NaiveDate, today: NaiveDate, rng: &mut Lcg) -> Vec<
     out
 }
 
-fn import_round(b: &mut Book, a: &Accounts, rows: &[(AccountId, RawTransaction)], tag: &str, now: i64) -> pecunia_model::Result<()> {
-    for (acct, source, file) in [(a.ing, SourceKind::Csv, "ING"), (a.spaar, SourceKind::Mt940, "Oranje Spaar"), (a.card, SourceKind::Csv, "ICS")] {
+/// Imports the rows of `which` accounts: ING as CSV, savings as MT940 (with the closing balance), the card as CSV.
+fn import_round(
+    b: &mut Book,
+    a: &Accounts,
+    which: &[AccountId],
+    rows: &[(AccountId, RawTransaction)],
+    tag: &str,
+    now: i64,
+) -> pecunia_model::Result<()> {
+    let files = [(a.ing, SourceKind::Csv, "ING"), (a.spaar, SourceKind::Mt940, "Oranje Spaar"), (a.card, SourceKind::Csv, "ICS")];
+    for (acct, source, file) in files.into_iter().filter(|(x, _, _)| which.contains(x)) {
         let mine: Vec<RawTransaction> = rows.iter().filter(|(x, _)| *x == acct).map(|(_, r)| r.clone()).collect();
         if mine.is_empty() {
             continue;
@@ -316,6 +334,10 @@ mod tests {
         let tree = b.tree();
         let ing = b.balances().shown(&tree, b.resolve_account("ING Betaalrekening").unwrap());
         assert!(ing.is_positive(), "{ing}");
+        for name in ["ING Betaalrekening / Bills", "ICS Creditcard"] {
+            let shown = b.balances().shown(&tree, b.resolve_account(name).unwrap());
+            assert!(!shown.is_negative() && shown < Money(300_000), "{name}: {shown}");
+        }
         let (_, notes) = Book::from_parts(
             b.meta.clone(),
             b.accounts().map(|a| (**a).clone()).collect(),
