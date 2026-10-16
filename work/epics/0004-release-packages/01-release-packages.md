@@ -41,6 +41,9 @@ the gaps; build the Mac packages locally; parse the workflow YAML.
   deprecation warning on this macOS (same in OpenIssue); it still works. `package-linux` and `package-windows`
   compile (runtime `cfg!` guards) but are unverified until the first release run on CI.
 
+- 2026-10-16: First run of `release.yml` (manual, run 38908219883): macOS universal, Linux x86_64 and arm64,
+  Windows x86_64 all built; artifacts 25, 13, 13 and 10 MB. Publish, image and deploy jobs skipped (no tag).
+
 ## Follow-ups
 - [0007 Sign and notarise the builds](../../issues/0007-sign-and-notarise.md)
-- First tagged release: check the Linux and Windows archives from CI.
+- First tagged release (`v0.1.0`): the owner decides when.
