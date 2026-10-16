@@ -46,3 +46,17 @@ fn sidebar_navigates_and_shows_an_account() {
     assert_eq!(s.view.screen, Screen::Transactions);
     assert_eq!(s.view.filter.account, s.book().resolve_account("ING Betaalrekening"));
 }
+
+#[test]
+fn overview_opens_review_and_pots_add_a_pot() {
+    let mut h = harness(sample());
+    h.run_steps(3);
+    h.get_by_label("Open Review").click();
+    h.run_steps(2);
+    assert_eq!(h.state().session.view.screen, Screen::Review);
+    h.state_mut().go(Screen::Pots);
+    h.run_steps(3);
+    h.get_by_label("New pot in ING Oranje Spaar").click();
+    h.run_steps(2);
+    assert!(matches!(h.state().ui.dialog, Some(crate::dialogs::Dialog::NewAccount(_))));
+}
