@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 created: 2026-10-16
 ---
 # Model and bank-file formats
@@ -24,6 +24,7 @@ matching, ingest, the offline classifier with rule learning, Review, register qu
    tests, with synthetic test files only.
 
 ## Progress log
+- 2026-10-16: model written and tested (ledger, payees, dedup, ingest, classifier, Review, register, repair, diff); reports and formats ported by subagents in worktrees and merged. All budget.rs tests kept.
 - 2026-10-16: plan written.
 - 2026-10-16: `formats` ported: `built_in_profiles`, `detect`, `parse`, `preview_csv` (plain functions, no
   trait), `samples` (synthetic bank-file writers). All budget.rs parser tests kept; new tests for saved

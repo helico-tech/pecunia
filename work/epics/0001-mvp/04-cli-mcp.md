@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 created: 2026-10-16
 ---
 # CLI and MCP
@@ -15,5 +15,6 @@ created: 2026-10-16
 ## Plan
 
 ## Progress log
+- 2026-10-16: MCP adapted from OpenIssue; CLI subcommands written and tried on the sample book.
 
 ## Follow-ups

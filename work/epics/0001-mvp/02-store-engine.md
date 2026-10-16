@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 created: 2026-10-16
 ---
 # Store, engine and sample book
@@ -19,5 +19,6 @@ Commands: `file.*`, `book.rename`, `account.*`, `pot.*`, `txn.*`, `import.*`, `r
 `txns.list`, `accounts.list`, `review.list`).
 
 ## Progress log
+- 2026-10-16: store, Session and all commands (file, txn, review, import, account, rule, view, query, report) with tests, incl. hostile params and import through the real parsers. Sample household built the way a person would (two import rounds). Answer amounts are integer cents, params are euros.
 
 ## Follow-ups
