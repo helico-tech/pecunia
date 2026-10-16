@@ -1,0 +1,63 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "xtask"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+repository = "https://github.com/helico-tech/pecunia"
+
+[workspace.dependencies]
+# internal
+pecunia-model = { path = "crates/model" }
+pecunia-formats = { path = "crates/formats" }
+pecunia-store = { path = "crates/store" }
+pecunia-engine = { path = "crates/engine" }
+pecunia-mcp = { path = "crates/mcp" }
+pecunia-ui-egui = { path = "crates/ui-egui" }
+
+# shared Craft libraries (MIT OR Apache-2.0), pinned
+craft-atomic = { git = "https://github.com/storytold/craft-libs", rev = "8f5a2831614e632f91ad367f7af2a6e5b61b9529" }
+craft-quit = { git = "https://github.com/storytold/craft-libs", rev = "8f5a2831614e632f91ad367f7af2a6e5b61b9529" }
+
+# foundation
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
+thiserror = "2"
+log = "0.4"
+web-time = "1"
+chrono = { version = "0.4.42", default-features = false, features = ["alloc", "serde"] }
+regex = "1.13.1"
+sha2 = "0.11.0"
+base64 = "0.22.1"
+encoding_rs = "0.8.42"
+roxmltree = "0.21.1"
+
+# ui
+egui = "0.36"
+eframe = { version = "0.36", default-features = false }
+egui_kittest = "0.36"
+rfd = "0.17"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+too_many_arguments = "allow"
+type_complexity = "allow"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+debug = 0
