@@ -1,5 +1,5 @@
 ---
-status: todo
+status: in-progress
 created: 2026-10-16
 ---
 # GitHub repo and CI
@@ -12,7 +12,9 @@ clippy) and the release workflow copied from OpenIssue (not tagged until the own
 - CI is green on `main`.
 
 ## Plan
+gh repo create helico-tech/pecunia --private; push main; watch CI.
 
 ## Progress log
+- 2026-10-16: workflows adapted from OpenIssue (ci on macOS, Linux, Windows; release on v* tags only). Next: create the private repo and push.
 
 ## Follow-ups
