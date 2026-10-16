@@ -150,8 +150,9 @@ fn the_demo_says_so_and_books_can_get_a_password() {
 /// that is not bound yet. The first frame binds them.
 #[test]
 fn fonts_are_ready_only_after_the_first_frame() {
-    let mut h = harness(sample());
-    assert!(!h.state().fonts_ready());
+    let app = sample();
+    assert!(!app.fonts_ready(), "nothing is bound before the first frame");
+    let mut h = harness(app);
     h.run_steps(1);
     assert!(h.state().fonts_ready());
 }
