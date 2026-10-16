@@ -13,7 +13,7 @@ policy, and one data file per book (ADR 0002).
 |---|---|---|
 | L0 | `crates/model` | `Money` (integer cents, saturating), the account tree (`AccountTree`), transactions with postings, payee rules. `Book` with validated edits (accounts, transactions, answers, splits, pot moves, rules, starting balances), `from_parts` (repairs hostile data), `diff` → `Change`s. `ledger` (booking rules, balances, transfer matching), `payees` (normalisation, similarity, import hashes), `dedup`, `ingest` (bank rows → books), `classify` (own accounts → rules → memory), `review`, `register` (rows, arrows, running balances), `reports`, `catalogue`. Dates and times are passed in; no clock, no I/O. |
 | L1 | `crates/formats` | Bank-file parsers: built-in CSV profiles of Dutch banks (ING, Rabobank, ABN AMRO, ASN/SNS/RegioBank, Triodos, bunq, Knab, ICS), saved profiles, CAMT.053, MT940; `detect`, `parse`, `preview_csv`; synthetic sample-file writers. Bytes in, rows out. |
-| L1 | `crates/store` | `trait Store { load, apply(book, changes), changed_externally }`. `encode`/`decode` are the file format. `MemoryStore` replays changes; `JsonFileStore` writes one pretty JSON file atomically (`craft-atomic`) and detects other writers by modification time and size. |
+| L1 | `crates/store` | `trait Store { load, apply(book, changes), changed_externally, encrypted, set_password }`. `encode`/`decode` are the file format, with migrations (ADR 0006); `crypto` seals and opens protected books (ADR 0007). `MemoryStore` replays changes; `JsonFileStore` writes one pretty JSON file atomically (`craft-atomic`) and detects other writers by modification time and size. |
 | L2 | `crates/engine` | `Session`: the open book (`Arc` snapshots), store, selection, `ViewState`, undo/redo, journal, notices, UI requests, a revision counter. `Session::execute(id, params)` runs a `CommandSpec`, catches panics, records undo, then flushes the diff to the store. `cmd/*.rs` holds the registry (`file`, `txn`, `review`, `import`, `account`, `rule`, `view`, `query`, `report`). `sample.rs` builds the made-up sample household. |
 | L3 | `crates/mcp` | JSON-RPC 2.0 over stdio. `tools/list` comes from the registry (`txn.create` → `txn_create`); `tools/call` uses `execute_headless`. |
 | L4 | `crates/ui-egui` | `PecuniaApp`: sidebar, Overview, Review, register, Pots, Reports, Accounts, Rules, Imports, the transaction detail pane, dialogs, palette, toasts. `theme::Tokens` (light/dark), `icons.rs` (all drawn in code), `pickers.rs`, `widgets.rs`. Examples: `snapshot` (offscreen PNG), `app_icon`. |
@@ -28,6 +28,34 @@ Groups: money you have (`have`), money you owe (`owe`), where money goes (`goes`
 comes from (`comes`), hidden `equity`. Physical accounts are roots of have/owe; every have account
 has exactly one *Unassigned* pot; categories sit under category groups. Postings go to leaves
 only and every transaction sums to zero. An unclassified bank row posts against *Not sorted yet*.
+
+## The file format
+
+A book is one `.pecunia` file (ADR 0002), UTF-8 JSON, pretty-printed:
+
+```json
+{
+  "format": "pecunia",
+  "version": 1,
+  "meta": { "name": "…", "demo": false, "next_account": 41, "next_txn": 312, "next_rule": 18,
+            "next_import": 8, "profiles": [ CSV layouts ], "balances": [ stated bank balances ],
+            "imports": [ import log ] },
+  "accounts": [ { "id", "group", "kind", "parent", "name", "iban", "unassigned", "system", "goal", … } ],
+  "transactions": [ { "id", "kind", "date", "payee", "payee_norm", "account", "bank_amount",
+                      "source", "import", "status", "guesses", "postings": [ { "account", "amount" } ],
+                      "keys": [ { "account", "key" } ], … } ],
+  "rules": [ { "id", "payee_prefix", "iban", "account", "origin", "mixed", "uses" } ]
+}
+```
+
+Money is integer cents, dates are `YYYY-MM-DD`, records are sorted by number and empty fields are
+left out, so the file diffs well. A protected book (ADR 0007) holds an envelope instead:
+`{"format": "pecunia-encrypted", "version": 1, "kdf": {argon2id settings, salt}, "cipher":
+"xchacha20poly1305", "nonce", "data"}`, where `data` is the plain document above, encrypted.
+
+Versions (ADR 0006): `crates/store/src/file.rs` has `VERSION` and `MIGRATIONS`; `decode` migrates
+older documents step by step and refuses newer ones. `crates/engine/tests/fixtures/v<N>/` holds a
+frozen plain and encrypted book per version that CI opens on every run.
 
 ## Data flow
 

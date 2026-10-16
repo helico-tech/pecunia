@@ -116,6 +116,10 @@ pub struct UiState {
     pub footer_link: Option<(String, String)>,
     /// Whether the host can pick files (the browser without file access can't).
     pub can_pick_files: bool,
+    /// Show the DEMO banner over a demo book (a host with its own banner turns this off).
+    pub demo_banner: bool,
+    /// The password typed in the Unlock dialog for a file the host read itself (the browser).
+    pub unlock_answer: Option<String>,
 }
 
 impl Default for UiState {
@@ -139,6 +143,8 @@ impl Default for UiState {
             scroll_to_selection: false,
             footer_link: None,
             can_pick_files: true,
+            demo_banner: true,
+            unlock_answer: None,
         }
     }
 }
@@ -223,6 +229,8 @@ impl PecuniaApp {
             },
             "newBook" => Dialog::NewBook(dialogs::NewBookForm::default()),
             "rename" => Dialog::Rename(dialogs::RenameForm { name: self.session.book().name().to_string(), focused: false }),
+            "unlock" => Dialog::Unlock(dialogs::UnlockForm::from_params(&params)),
+            "setPassword" => Dialog::SetPassword(dialogs::SetPasswordForm::default()),
             other => {
                 log::warn!("unknown dialog {other}");
                 return;
@@ -409,6 +417,12 @@ impl PecuniaApp {
             .exact_size(26.0)
             .frame(egui::Frame::new().fill(t.sidebar).inner_margin(egui::Margin::symmetric(12, 0)))
             .show(ui, |ui| self.status_bar(ui, &t));
+        if self.ui.demo_banner && self.session.is_demo() {
+            egui::Panel::top("demo")
+                .resizable(false)
+                .frame(egui::Frame::new().fill(t.warning_soft).inner_margin(egui::Margin::symmetric(14, 8)))
+                .show(ui, |ui| self.demo_banner(ui, &t));
+        }
         if self.ui.sidebar {
             egui::Panel::left("sidebar")
                 .resizable(true)
@@ -441,10 +455,39 @@ impl PecuniaApp {
         self.toasts(&ctx, &t);
     }
 
+    /// The DEMO banner: what this book is, and how to start a real one.
+    fn demo_banner(&mut self, ui: &mut egui::Ui, t: &Tokens) {
+        let mut action = None;
+        ui.horizontal_wrapped(|ui| {
+            widgets::demo_badge(ui, 12.0, t);
+            let text = if self.session.store_path().is_some() {
+                "This book is filled with a made-up household. Its money and payees are not real."
+            } else {
+                "You are looking at a made-up household to try Pecunia. Nothing here is real, and nothing is saved."
+            };
+            ui.label(egui::RichText::new(text).size(13.0).color(t.text));
+            if self.session.store_path().is_none() {
+                if ui.button("Start your own book…").clicked() {
+                    action = Some("file.new");
+                }
+                if ui.button("Open a book…").clicked() {
+                    action = Some("file.open");
+                }
+            }
+        });
+        if let Some(a) = action {
+            self.run(a, json!({}));
+        }
+    }
+
     fn status_bar(&mut self, ui: &mut egui::Ui, t: &Tokens) {
         ui.horizontal_centered(|ui| {
             let (dot, text) = match &self.session.save_error {
                 Some(e) => (t.danger, format!("Not saved: {e}")),
+                None if self.session.is_demo() && self.session.store_path().is_none() && self.session.location() == "memory" => {
+                    (t.warning, "Not saved: a demo in memory".to_string())
+                }
+                None if self.session.encrypted() => (t.positive, "Saved · encrypted".to_string()),
                 None => (t.positive, "Saved".to_string()),
             };
             let (r, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
@@ -540,6 +583,7 @@ impl PecuniaApp {
             "ui.newPot" => self.open_dialog("newAccount", json!({ "kind": "pot" })),
             "ui.newCategory" => self.open_dialog("newAccount", json!({ "kind": "category" })),
             "ui.potMove" => self.open_dialog("potMove", params),
+            "file.setPassword" if params.get("password").is_none() => self.open_dialog("setPassword", json!({})),
             "ui.split" => self.open_dialog("split", params),
             "ui.editAccount" => self.open_dialog("editAccount", params),
             "txn.create" if params.as_object().is_none_or(|o| o.is_empty()) => self.new_txn(),

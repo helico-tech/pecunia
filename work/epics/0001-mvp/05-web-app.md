@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: done
 created: 2026-10-16
 ---
 # Web app at pecunia.helico.app
@@ -16,6 +16,7 @@ Dockerfile and k8s manifest for self-hosting.
 Adapt openissue-web; add the bank-file picker (showOpenFilePicker, else <input type=file>); deploy with wrangler.
 
 ## Progress log
+- 2026-10-16: deployed with wrangler to https://pecunia.helico.app; loaded headless: sample book, no console errors. Real-Chrome file access still to check (issue 0006).
 - 2026-10-16: web app adapted from OpenIssue (File System Access store, bank-file import through the browser picker, Dockerfile, k8s, wrangler for pecunia.helico.app); `cargo xtask web` builds; files served locally load. Next: deploy and check in a browser.
 
 ## Follow-ups

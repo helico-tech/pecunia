@@ -102,7 +102,7 @@ fn queries_and_views() {
     let mut s = Session::sample();
     s.now = fixed_now;
     let info = s.execute("book.info", json!({})).unwrap();
-    assert_eq!(info["name"], "Sample household");
+    assert_eq!(info["name"], "Demo household");
     assert!(info["toReview"].as_u64().unwrap() > 0);
     let accounts = s.execute("accounts.list", json!({"group": "have"})).unwrap();
     assert!(accounts["accounts"].as_array().unwrap().iter().all(|a| a["group"] == "have"));
@@ -293,4 +293,51 @@ fn imports_bank_files_once() {
     assert_eq!(junk["csv"]["headers"], json!(["a", "b", "c"]));
     assert!(s.execute("import.file", json!({"contentBase64": "!!!"})).is_err());
     assert_eq!(s.book().validate(), Ok(()));
+}
+
+#[test]
+fn password_protected_books() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("secret.pecunia");
+    let path_s = path.to_str().unwrap();
+    let mut s = session();
+    assert!(s.execute("file.new", json!({"path": path_s, "password": "short"})).is_err(), "at least 8 characters");
+    s.execute("file.new", json!({"path": path_s, "name": "Secret", "password": "correct horse"})).unwrap();
+    assert!(s.encrypted());
+    s.execute("account.create", json!({"kind": "cash", "name": "Wallet"})).unwrap();
+    assert!(!std::fs::read_to_string(&path).unwrap().contains("Wallet"), "the file holds no readable data");
+
+    // Opening without the password asks for it; headless callers get an error that says what to pass.
+    let mut other = session();
+    other.execute("file.open", json!({"path": path_s})).unwrap();
+    assert!(matches!(other.take_ui_requests().first(), Some(UiRequest::Dialog(n, _)) if n == "unlock"));
+    assert!(other.execute_headless("file.open", json!({"path": path_s})).unwrap_err().to_string().contains("password"));
+    assert!(other.execute("file.open", json!({"path": path_s, "password": "wrong password"})).is_err());
+    other.execute("file.open", json!({"path": path_s, "password": "correct horse"})).unwrap();
+    assert!(other.book().resolve_account("Wallet").is_some());
+    assert!(Session::open_with(path_s, Some("correct horse")).is_ok());
+
+    // Edits from the other session are picked up with the kept key, no password needed.
+    other.execute("account.create", json!({"kind": "savings", "name": "Spaar"})).unwrap();
+    assert!(s.poll_external());
+    assert!(s.book().resolve_account("Spaar").is_some());
+
+    s.execute("file.removePassword", json!({})).unwrap();
+    assert!(!s.encrypted());
+    assert!(std::fs::read_to_string(&path).unwrap().contains("Wallet"));
+    assert!(s.execute("file.removePassword", json!({})).is_err(), "nothing to remove");
+    s.execute("file.setPassword", json!({"password": "battery staple"})).unwrap();
+    assert!(Session::open_with(path_s, Some("battery staple")).is_ok());
+    assert!(Session::open_with(path_s, Some("correct horse")).is_err());
+    assert!(Session::scratch().execute("file.setPassword", json!({"password": "12345678"})).is_err(), "a book in memory has no file to protect");
+    let journal = format!("{:?}", s.journal());
+    assert!(!journal.contains("correct horse") && !journal.contains("battery staple"), "no passwords in the journal: {journal}");
+}
+
+#[test]
+fn the_sample_is_a_demo() {
+    let s = Session::sample();
+    assert!(s.is_demo());
+    assert_eq!(s.book().name(), "Demo household");
+    assert!(!session().is_demo());
 }

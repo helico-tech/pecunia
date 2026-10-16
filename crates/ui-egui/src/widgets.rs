@@ -250,3 +250,13 @@ pub fn section(ui: &mut Ui, title: &str, t: &Tokens) {
 pub fn card(t: &Tokens) -> egui::Frame {
     egui::Frame::new().fill(t.surface).stroke(Stroke::new(1.0, t.border)).corner_radius(CornerRadius::same(10)).inner_margin(egui::Margin::same(16))
 }
+
+/// A small "DEMO" badge, for a made-up book.
+pub fn demo_badge(ui: &mut Ui, size: f32, t: &Tokens) -> Response {
+    let g = ui.painter().layout_no_wrap("DEMO".into(), theme::bold(size * 0.85), Color32::WHITE);
+    let (rect, resp) = ui.allocate_exact_size(vec2(g.size().x + size, size * 1.6), Sense::hover());
+    ui.painter().rect_filled(rect, size * 0.4, t.warning);
+    ui.painter().galley(rect.center() - g.size() / 2.0, g, Color32::WHITE);
+    a11y(&resp, "Demo book");
+    resp.on_hover_text("A made-up household to try Pecunia")
+}

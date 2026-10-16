@@ -6,8 +6,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use base64::Engine as _;
-use pecunia_engine::Session;
+use pecunia_engine::store::StoreError;
 use pecunia_engine::store::{self, FILE_EXTENSION};
+use pecunia_engine::{EngineError, Session};
 use pecunia_ui_egui::{FileRequest, ImportFile, PecuniaApp, ThemeMode};
 use serde_json::{Value as Json, json};
 use wasm_bindgen::JsCast;
@@ -46,6 +47,18 @@ extern "C" {
     fn load_theme() -> String;
     #[wasm_bindgen(js_name = saveTheme)]
     fn save_theme(id: &str);
+    #[wasm_bindgen(js_name = randomBytes)]
+    fn random_bytes(n: u32) -> Vec<u8>;
+}
+
+/// Random bytes from `crypto.getRandomValues`, for the salts and nonces of protected books (ADR 0007).
+fn web_random(buf: &mut [u8]) -> Result<(), String> {
+    let bytes = random_bytes(buf.len() as u32);
+    if bytes.len() != buf.len() {
+        return Err("the browser gave no random numbers".into());
+    }
+    buf.copy_from_slice(&bytes);
+    Ok(())
 }
 
 const RELEASES: &str = "https://github.com/helico-tech/pecunia/releases";
@@ -73,13 +86,14 @@ pub fn start() {
 
 /// What an async task reports back to the frame loop.
 enum Event {
-    /// A file was read; open it. `note` is shown as a toast.
+    /// A file was read; open it. `note` is shown as a toast; `password` unlocks a protected book.
     Opened {
         handle: JsValue,
         name: String,
         bytes: Vec<u8>,
         stamp: Stamp,
         note: Option<String>,
+        password: Option<String>,
     },
     /// The file used last time, which needs the person's permission before it can be opened.
     Last {
@@ -109,6 +123,8 @@ struct App {
     /// The appearance last saved to the browser.
     theme: ThemeMode,
     shown_write_error: Option<String>,
+    /// A protected file waiting for its password: what `Event::Opened` held.
+    locked: Option<(JsValue, String, Vec<u8>, Stamp, Option<String>)>,
 }
 
 impl App {
@@ -119,6 +135,8 @@ impl App {
         let theme = pecunia.ui.theme;
         pecunia.ui.footer_link = Some(("Pecunia on GitHub".into(), REPO.into()));
         pecunia.ui.can_pick_files = supported;
+        // The web app draws its own DEMO banner, with the browser's file actions.
+        pecunia.ui.demo_banner = false;
         let app = App {
             app: pecunia,
             ctx: ctx.clone(),
@@ -129,6 +147,7 @@ impl App {
             title: String::new(),
             theme,
             shown_write_error: None,
+            locked: None,
         };
         if app.supported {
             app.spawn(async {
@@ -199,7 +218,12 @@ impl App {
             {
                 return Some(Event::Failed(format!("{file_name} already exists. Choose another name, or open it instead.")));
             }
-            let bytes = match pecunia_engine::cmd::new_book(&params, &name, now).and_then(|b| Ok(store::encode(&b)?)) {
+            let password = params.get("password").and_then(|p| p.as_str()).filter(|p| !p.is_empty()).map(str::to_string);
+            let key = match password.as_deref().map(|p| store::crypto::Key::new(p, web_random)).transpose() {
+                Ok(k) => k,
+                Err(e) => return Some(Event::Failed(e.to_string())),
+            };
+            let bytes = match pecunia_engine::cmd::new_book(&params, &name, now).and_then(|b| Ok(store::encode_with(&b, key.as_ref(), web_random)?)) {
                 Ok(b) => b,
                 Err(e) => return Some(Event::Failed(e.to_string())),
             };
@@ -209,7 +233,7 @@ impl App {
             match write_file(&handle, &bytes).await {
                 Ok(st) => {
                     remember(&handle).await.ok();
-                    Some(Event::Opened { handle, name: file_name, bytes, stamp: stamp(&st), note: None })
+                    Some(Event::Opened { handle, name: file_name, bytes, stamp: stamp(&st), note: None, password })
                 }
                 Err(e) => Some(Event::Failed(format!("Couldn't write {file_name}: {}", js_error(&e)))),
             }
@@ -217,12 +241,24 @@ impl App {
     }
 
     fn handle_events(&mut self) {
+        // The person typed the password of a protected file: open it again with it.
+        if let Some(password) = self.app.ui.unlock_answer.take()
+            && let Some((handle, name, bytes, stamp, note)) = self.locked.take()
+        {
+            self.inbox.borrow_mut().push(Event::Opened { handle, name, bytes, stamp, note, password: Some(password) });
+        }
         let events: Vec<Event> = std::mem::take(&mut *self.inbox.borrow_mut());
         for e in events {
             match e {
-                Event::Opened { handle, name, bytes, stamp, note } => {
-                    let (store, shared) = BrowserFileStore::new(&name, bytes, Some(stamp));
+                Event::Opened { handle, name, bytes, stamp, note, password } => {
+                    let tried = password.is_some();
+                    let (store, shared) = BrowserFileStore::new(&name, bytes.clone(), Some(stamp), password, web_random);
                     match self.app.session.open_store(Box::new(store)) {
+                        Err(EngineError::Store(e @ (StoreError::Locked | StoreError::WrongPassword))) => {
+                            let error = (tried || e == StoreError::WrongPassword).then_some("Wrong password, or the file is damaged.");
+                            self.locked = Some((handle, name.clone(), bytes, stamp, note));
+                            self.app.open_dialog("unlock", json!({ "name": name, "error": error }));
+                        }
                         Ok(()) => {
                             self.app.ui.buffers = Default::default();
                             self.file = Some(shared.clone());
@@ -273,32 +309,32 @@ impl App {
         let mut action = None;
         egui::Panel::top("web-banner")
             .resizable(false)
-            .frame(egui::Frame::new().fill(t.accent_soft).inner_margin(egui::Margin::symmetric(12, 7)))
+            .frame(egui::Frame::new().fill(t.warning_soft).inner_margin(egui::Margin::symmetric(12, 7)))
             .show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
+                    pecunia_ui_egui::widgets::demo_badge(ui, 12.0, &t);
                     if !self.supported {
                         ui.label(
                             egui::RichText::new(
-                                "This browser can't edit files on your computer, so this is a sample book that isn't saved. Use Chrome or Edge, or the desktop app.",
+                                "You are looking at a made-up household. Nothing is saved: this browser can't edit files on your computer. Use Chrome or Edge, or the desktop app.",
                             )
                             .color(t.text),
                         );
                         ui.hyperlink_to("Download Pecunia", RELEASES);
                         return;
                     }
-                    ui.label(egui::RichText::new("Sample book: changes are not saved. Your book is a file on your own computer.").color(t.text));
-                    if ui.button("Open file…").clicked() {
-                        action = Some("open");
-                    }
-                    if ui.button("New file…").clicked() {
+                    ui.label(egui::RichText::new("You are looking at a made-up household. Nothing here is real, and nothing is saved. Your own book is a file on your computer:").color(t.text));
+                    if ui.button("Start your own book…").clicked() {
                         action = Some("new");
+                    }
+                    if ui.button("Open a book…").clicked() {
+                        action = Some("open");
                     }
                     if let Some((_, name)) = &self.last
                         && ui.button(format!("Reopen {name}")).clicked()
                     {
                         action = Some("reopen");
                     }
-                    ui.hyperlink_to("Source on GitHub", REPO);
                 });
             });
         match action {
@@ -360,7 +396,7 @@ async fn open_with_permission(handle: JsValue) -> Event {
 
 async fn read(handle: JsValue, note: Option<String>) -> Event {
     match read_file(&handle).await {
-        Ok(f) => Event::Opened { handle, name: js_string(&f, "name"), bytes: js_bytes(&f), stamp: stamp(&f), note },
+        Ok(f) => Event::Opened { handle, name: js_string(&f, "name"), bytes: js_bytes(&f), stamp: stamp(&f), note, password: None },
         Err(e) => Event::Failed(format!("Couldn't read {}: {}", js_string(&handle, "name"), js_error(&e))),
     }
 }

@@ -70,8 +70,17 @@ fn header(app: &mut PecuniaApp, ui: &mut Ui, t: &Tokens) {
     let badge = Rect::from_center_size(pos2(rect.left() + 18.0, rect.center().y), vec2(24.0, 24.0));
     ui.painter().rect_filled(badge, 6.0, t.accent);
     ui.painter().text(badge.center(), Align2::CENTER_CENTER, "€", theme::bold(13.0), Color32::WHITE);
-    let text = widgets::elide(ui, &name, theme::bold(14.0), rect.width() - 64.0);
-    ui.painter().text(pos2(rect.left() + 38.0, rect.center().y), Align2::LEFT_CENTER, text, theme::bold(14.0), t.text);
+    let demo = app.session.is_demo();
+    let room = rect.width() - 64.0 - if demo { 52.0 } else { 0.0 };
+    let text = widgets::elide(ui, &name, theme::bold(14.0), room);
+    let g = ui.painter().layout_no_wrap(text, theme::bold(14.0), t.text);
+    let text_w = g.size().x;
+    ui.painter().galley(pos2(rect.left() + 38.0, rect.center().y - g.size().y / 2.0), g, t.text);
+    if demo {
+        let badge = Rect::from_min_size(pos2(rect.left() + 44.0 + text_w, rect.center().y - 9.0), vec2(44.0, 18.0));
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(badge));
+        widgets::demo_badge(&mut child, 11.0, t);
+    }
     icons::glyph(ui.painter(), pos2(rect.right() - 14.0, rect.center().y), 10.0, Glyph::ChevronDown, t.text_dim);
     widgets::a11y(&resp, format!("Book {name}"));
     let resp = resp.on_hover_text(app.session.location());
@@ -80,6 +89,19 @@ fn header(app: &mut PecuniaApp, ui: &mut Ui, t: &Tokens) {
         if widgets::menu_row(ui, |p, c| icons::glyph(p, c, 13.0, Glyph::Tag, t.text_dim), "Rename book…", false, t).clicked() {
             action = Some(("ui.rename", json!({})));
             ui.close();
+        }
+        if app.session.store_path().is_some() {
+            let label = if app.session.encrypted() { "Change password…" } else { "Protect with a password…" };
+            if widgets::menu_row(ui, |p, c| icons::glyph(p, c, 13.0, Glyph::Lock, t.text_dim), label, false, t).clicked() {
+                action = Some(("file.setPassword", json!({})));
+                ui.close();
+            }
+            if app.session.encrypted()
+                && widgets::menu_row(ui, |p, c| icons::glyph(p, c, 13.0, Glyph::Lock, t.text_faint), "Remove the password", false, t).clicked()
+            {
+                action = Some(("file.removePassword", json!({})));
+                ui.close();
+            }
         }
         ui.separator();
         if widgets::menu_row(ui, |p, c| icons::glyph(p, c, 13.0, Glyph::Plus, t.text_dim), "New book…", false, t).clicked() {

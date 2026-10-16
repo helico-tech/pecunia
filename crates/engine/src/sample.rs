@@ -1,4 +1,5 @@
-//! The sample household: a year of a Dutch household's money, made up (no real bank data). It is built the way a
+//! The demo household: a year of a Dutch household's money, made up (no real bank data), marked `meta.demo` so the apps
+//! say so on every screen. It is built the way a
 //! person would build it: accounts with starting balances, bank files imported in two rounds, the first round answered
 //! in Review (so the classifier learns rules and memory), the second sorted partly by itself. Review keeps some work:
 //! new payees, a mixed payee, a transfer and a possible duplicate.
@@ -52,14 +53,15 @@ fn day(d: NaiveDate, n: u32) -> NaiveDate {
 pub fn book(now: i64) -> Book {
     build(now).unwrap_or_else(|e| {
         log::warn!("the sample could not be built: {e}");
-        Book::new("Sample household").unwrap_or_else(|_| Book::from_parts(Default::default(), vec![], vec![], vec![]).0)
+        Book::new("Demo household").unwrap_or_else(|_| Book::from_parts(Default::default(), vec![], vec![], vec![]).0)
     })
 }
 
 fn build(now: i64) -> pecunia_model::Result<Book> {
     let today = pecunia_model::date_of(now).max(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap_or_default());
     let start = today.checked_sub_months(Months::new(12)).map(|d| day(d, 1)).unwrap_or(today);
-    let mut b = Book::with_starter_categories("Sample household")?;
+    let mut b = Book::with_starter_categories("Demo household")?;
+    b.meta.demo = true;
     for extra in ["Subscriptions", "Clothing", "Online Shopping", "Pet Care"] {
         if let Some(e) = catalogue::entry(extra) {
             catalogue::add_entry(&mut b, e)?;

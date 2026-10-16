@@ -7,14 +7,15 @@ use std::io::{self, Write};
 use std::process::ExitCode;
 
 use pecunia_engine::model::Money;
-use pecunia_engine::{Session, command_specs};
+use pecunia_engine::store::StoreError;
+use pecunia_engine::{EngineError, Session, command_specs};
 use serde_json::{Map, Value as Json, json};
 
 const USAGE: &str = "\
 pecunia-cli — a household book in a .pecunia file
 
 USAGE:
-  pecunia-cli init <file> [--name NAME] [--no-categories] [--sample]
+  pecunia-cli init <file> [--name NAME] [--no-categories] [--sample] [--encrypt]
   pecunia-cli accounts <file> [--json]
   pecunia-cli add-account <file> --kind K --name NAME [--parent P] [--iban IBAN] [--balance EUROS] [--date D]
                           (kinds: current, savings, cash, property, credit_card, loan, pot, category_group, category)
@@ -27,9 +28,12 @@ USAGE:
   pecunia-cli report <file> overview|net-worth|income|cash-flow|fixed-costs|bank-check [--from D] [--to D]
   pecunia-cli run <file> --cmd 'id={json}'...     (any command; see `commands`)
   pecunia-cli commands [--json]
+  pecunia-cli password <file> (--new-password-file F | --remove)
   pecunia-cli mcp <file>                          (MCP server on stdio)
 
 Amounts you give are euros (12.50 or 12,50); dates are YYYY-MM-DD. JSON answers give amounts in cents.
+A protected book is opened with the password in PECUNIA_PASSWORD or in the file --password-file names
+(`init --encrypt` protects a new book with that password; `password` sets, changes or removes it).
 ";
 
 fn main() -> ExitCode {
@@ -62,7 +66,7 @@ struct Opts {
     flags: Vec<(String, Option<String>)>,
 }
 
-const BARE: &[&str] = &["--sample", "--json", "--review", "--always", "--dry-run", "--no-categories"];
+const BARE: &[&str] = &["--sample", "--json", "--review", "--always", "--dry-run", "--no-categories", "--encrypt", "--remove"];
 
 fn parse(args: &[String]) -> Result<Opts, Failure> {
     let mut o = Opts { positional: Vec::new(), flags: Vec::new() };
@@ -103,8 +107,23 @@ impl Opts {
     }
 }
 
-fn open(path: &str) -> Result<Session, Failure> {
-    let mut s = Session::open(path).map_err(err)?;
+/// The password from `--password-file` (its first line) or `PECUNIA_PASSWORD`.
+fn password(o: &Opts) -> Result<Option<String>, Failure> {
+    if let Some(f) = o.get("password-file") {
+        let text = std::fs::read_to_string(f).map_err(|e| Failure::Error(format!("can't read {f}: {e}")))?;
+        return Ok(text.lines().next().map(str::to_string).filter(|p| !p.is_empty()));
+    }
+    Ok(std::env::var("PECUNIA_PASSWORD").ok().filter(|p| !p.is_empty()))
+}
+
+fn open(path: &str, o: &Opts) -> Result<Session, Failure> {
+    let pw = password(o)?;
+    let mut s = Session::open_with(path, pw.as_deref()).map_err(|e| match e {
+        EngineError::Store(StoreError::Locked) => {
+            Failure::Error(format!("{path} is protected with a password: set PECUNIA_PASSWORD or pass --password-file"))
+        }
+        e => err(e),
+    })?;
     for n in s.take_notices() {
         eprintln!("{}", n.text);
     }
@@ -141,6 +160,10 @@ fn run(args: &[String]) -> Result<(), Failure> {
             let path = o.pos(0, "<file>")?;
             let mut sess = Session::scratch();
             let mut p = json!({ "path": path, "sample": o.has("sample"), "categories": !o.has("no-categories") });
+            if o.has("encrypt") {
+                let pw = password(&o)?.ok_or_else(|| Failure::Usage("--encrypt needs PECUNIA_PASSWORD or --password-file".into()))?;
+                p["password"] = json!(pw);
+            }
             if let Some(n) = o.get("name") {
                 p["name"] = json!(n);
             }
@@ -149,7 +172,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
             Ok(())
         }
         "accounts" => {
-            let mut sess = open(o.pos(0, "<file>")?)?;
+            let mut sess = open(o.pos(0, "<file>")?, &o)?;
             let r = exec(&mut sess, "accounts.list", json!({}))?;
             if o.has("json") {
                 print_json(&r);
@@ -163,7 +186,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
             Ok(())
         }
         "add-account" => {
-            let mut sess = open(o.pos(0, "<file>")?)?;
+            let mut sess = open(o.pos(0, "<file>")?, &o)?;
             let p = o.params(&[
                 ("kind", "kind"),
                 ("name", "name"),
@@ -178,7 +201,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
             Ok(())
         }
         "import" => {
-            let mut sess = open(o.pos(0, "<file>")?)?;
+            let mut sess = open(o.pos(0, "<file>")?, &o)?;
             let mut p = json!({ "path": o.pos(1, "<bank-file>")?, "dryRun": o.has("dry-run") });
             if let Some(a) = o.get("account") {
                 p["account"] = json!(a);
@@ -207,7 +230,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
             Ok(())
         }
         "list" => {
-            let mut sess = open(o.pos(0, "<file>")?)?;
+            let mut sess = open(o.pos(0, "<file>")?, &o)?;
             let mut p = o.params(&[("account", "account"), ("text", "text"), ("from", "from"), ("to", "to"), ("status", "status")]);
             p.insert("review".into(), json!(o.has("review")));
             p.insert("limit".into(), json!(o.get("limit").and_then(|l| l.parse::<u64>().ok()).unwrap_or(100)));
@@ -236,7 +259,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
             Ok(())
         }
         "show" => {
-            let mut sess = open(o.pos(0, "<file>")?)?;
+            let mut sess = open(o.pos(0, "<file>")?, &o)?;
             let r = exec(&mut sess, "txn.get", json!({ "id": o.pos(1, "<ID>")? }))?;
             if o.has("json") {
                 print_json(&r);
@@ -260,7 +283,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
             Ok(())
         }
         "add" => {
-            let mut sess = open(o.pos(0, "<file>")?)?;
+            let mut sess = open(o.pos(0, "<file>")?, &o)?;
             let p = o.params(&[
                 ("payee", "payee"),
                 ("from", "from"),
@@ -280,7 +303,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
             Ok(())
         }
         "review" => {
-            let mut sess = open(o.pos(0, "<file>")?)?;
+            let mut sess = open(o.pos(0, "<file>")?, &o)?;
             let mut p = json!({});
             if let Some(t) = o.get("tab") {
                 p["tab"] = json!(t);
@@ -306,7 +329,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
             Ok(())
         }
         "answer" => {
-            let mut sess = open(o.pos(0, "<file>")?)?;
+            let mut sess = open(o.pos(0, "<file>")?, &o)?;
             let p = json!({ "id": o.pos(1, "<ID>")?, "to": o.pos(2, "<CATEGORY-OR-ACCOUNT>")?, "always": o.has("always") });
             let r = exec(&mut sess, "txn.answer", p)?;
             println!("#{} → {}", r["id"], s(&r, "to"));
@@ -316,7 +339,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
             Ok(())
         }
         "report" => {
-            let mut sess = open(o.pos(0, "<file>")?)?;
+            let mut sess = open(o.pos(0, "<file>")?, &o)?;
             let id = match o.pos(1, "<report>")? {
                 "overview" => "report.overview",
                 "net-worth" => "report.netWorth",
@@ -331,7 +354,7 @@ fn run(args: &[String]) -> Result<(), Failure> {
             Ok(())
         }
         "run" => {
-            let mut sess = open(o.pos(0, "<file>")?)?;
+            let mut sess = open(o.pos(0, "<file>")?, &o)?;
             for c in o.all("cmd") {
                 let (id, params) = match c.split_once('=') {
                     Some((id, js)) => (id, serde_json::from_str(js).map_err(|e| Failure::Usage(format!("{id}: params are not JSON: {e}")))?),
@@ -354,8 +377,22 @@ fn run(args: &[String]) -> Result<(), Failure> {
             }
             Ok(())
         }
+        "password" => {
+            let mut sess = open(o.pos(0, "<file>")?, &o)?;
+            if o.has("remove") {
+                exec(&mut sess, "file.removePassword", json!({}))?;
+                println!("The password is removed; the book is stored unencrypted.");
+                return Ok(());
+            }
+            let f = o.get("new-password-file").ok_or_else(|| Failure::Usage("password needs --new-password-file or --remove".into()))?;
+            let text = std::fs::read_to_string(f).map_err(|e| Failure::Error(format!("can't read {f}: {e}")))?;
+            let new = text.lines().next().unwrap_or("").to_string();
+            exec(&mut sess, "file.setPassword", json!({ "password": new }))?;
+            println!("The book is protected. Keep the password safe: without it, nobody can open the book.");
+            Ok(())
+        }
         "mcp" => {
-            let mut sess = open(o.pos(0, "<file>")?)?;
+            let mut sess = open(o.pos(0, "<file>")?, &o)?;
             pecunia_mcp::serve(&mut sess, io::stdin().lock(), io::stdout().lock()).map_err(err)
         }
         other => Err(Failure::Usage(format!("unknown command {other}"))),

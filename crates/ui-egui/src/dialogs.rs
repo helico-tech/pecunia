@@ -21,6 +21,8 @@ pub enum Dialog {
     Import(ImportForm),
     NewBook(NewBookForm),
     Rename(RenameForm),
+    Unlock(UnlockForm),
+    SetPassword(SetPasswordForm),
 }
 
 fn account_of(s: &Session, p: &Json, key: &str) -> Option<AccountId> {
@@ -305,8 +307,64 @@ pub struct NewBookForm {
     pub name: String,
     pub categories: bool,
     pub sample: bool,
+    pub password: String,
+    pub repeat: String,
+    pub error: Option<String>,
     focused: bool,
     touched: bool,
+}
+
+/// Asks for the password of a protected book: one opened by path (desktop) or one the host read itself (browser),
+/// which gets the password back through [`crate::UiState::unlock_answer`].
+pub struct UnlockForm {
+    pub path: Option<String>,
+    pub name: String,
+    pub password: String,
+    pub error: Option<String>,
+    focused: bool,
+}
+
+impl UnlockForm {
+    pub fn from_params(p: &Json) -> UnlockForm {
+        let path = p.get("path").and_then(Json::as_str).map(str::to_string);
+        let name = p
+            .get("name")
+            .and_then(Json::as_str)
+            .map(str::to_string)
+            .or_else(|| path.as_deref().map(|x| std::path::Path::new(x).file_name().and_then(|n| n.to_str()).unwrap_or(x).to_string()))
+            .unwrap_or_else(|| "This book".into());
+        UnlockForm { path, name, password: String::new(), error: p.get("error").and_then(Json::as_str).map(str::to_string), focused: false }
+    }
+}
+
+#[derive(Default)]
+pub struct SetPasswordForm {
+    pub password: String,
+    pub repeat: String,
+    pub error: Option<String>,
+    focused: bool,
+}
+
+/// Checks a new password and its repeat; `None` when they are fine.
+fn password_problem(password: &str, repeat: &str) -> Option<String> {
+    if password.chars().count() < 8 {
+        Some("Use at least 8 characters.".into())
+    } else if password != repeat {
+        Some("The two passwords are not the same.".into())
+    } else {
+        None
+    }
+}
+
+/// A one-line password box (the text shows as dots).
+fn password_box(ui: &mut Ui, buf: &mut String, hint: &str, t: &Tokens) -> egui::Response {
+    egui::Frame::new()
+        .fill(t.bg)
+        .stroke(Stroke::new(1.0, t.border_strong))
+        .corner_radius(7)
+        .inner_margin(egui::Margin::symmetric(10, 7))
+        .show(ui, |ui| ui.add(egui::TextEdit::singleline(buf).password(true).frame(egui::Frame::NONE).hint_text(hint).desired_width(f32::INFINITY)))
+        .inner
 }
 
 pub struct RenameForm {
@@ -323,6 +381,8 @@ enum Outcome {
     SaveProfile(Json),
     /// Preview again (the account changed).
     Refresh,
+    /// The host app opens the file it read itself with this password.
+    Unlocked(String),
 }
 
 pub fn show(app: &mut PecuniaApp, ctx: &egui::Context, t: &Tokens) {
@@ -344,12 +404,15 @@ pub fn show(app: &mut PecuniaApp, ctx: &egui::Context, t: &Tokens) {
         Dialog::Import(f) => import(session, ui, f, t),
         Dialog::NewBook(f) => new_book(ui, f, t),
         Dialog::Rename(f) => rename(ui, f, t),
+        Dialog::Unlock(f) => unlock(ui, f, t),
+        Dialog::SetPassword(f) => set_password(session, ui, f, t),
     });
     let outcome = if resp.should_close() { Outcome::Close } else { resp.inner };
     match outcome {
         Outcome::Keep => app.ui.dialog = Some(dialog),
         Outcome::Close => {}
         Outcome::File(r) => app.ui.file_request = Some(r),
+        Outcome::Unlocked(pw) => app.ui.unlock_answer = Some(pw),
         Outcome::Refresh => {
             if let Dialog::Import(f) = &mut dialog {
                 f.refresh(&mut app.session);
@@ -390,7 +453,10 @@ fn set_error(d: &mut Dialog, e: String) {
         Dialog::PotMove(f) => &mut f.error,
         Dialog::Split(f) => &mut f.error,
         Dialog::Import(f) => &mut f.error,
-        Dialog::NewBook(_) | Dialog::Rename(_) => return,
+        Dialog::Unlock(f) => &mut f.error,
+        Dialog::SetPassword(f) => &mut f.error,
+        Dialog::NewBook(f) => &mut f.error,
+        Dialog::Rename(_) => return,
     };
     *slot = Some(e);
 }
@@ -1078,14 +1144,33 @@ fn new_book(ui: &mut Ui, f: &mut NewBookForm, t: &Tokens) -> Outcome {
     }
     ui.add_space(8.0);
     ui.checkbox(&mut f.categories, "Start with the usual household categories");
-    ui.checkbox(&mut f.sample, "Fill it with a made-up sample household to try things out");
+    ui.checkbox(&mut f.sample, "Fill it with the made-up demo household to try things out");
+    ui.add_space(10.0);
+    field(ui, "Password (optional)", t);
+    password_box(ui, &mut f.password, "Leave empty for an unprotected file", t);
+    if !f.password.is_empty() {
+        ui.add_space(6.0);
+        password_box(ui, &mut f.repeat, "Type it again", t);
+        ui.label(egui::RichText::new("The file is encrypted. Without the password nobody can open it, not even you.").size(11.5).color(t.warning));
+    }
+    error_line(ui, &f.error, t);
     let (go, cancel) = buttons(ui, "Choose location…", t);
     if cancel {
         return Outcome::Close;
     }
     if go || ui.input(|i| i.key_pressed(Key::Enter)) {
+        if !f.password.is_empty()
+            && let Some(problem) = password_problem(&f.password, &f.repeat)
+        {
+            f.error = Some(problem);
+            return Outcome::Keep;
+        }
         let name = if f.name.trim().is_empty() { "Household".to_string() } else { f.name.trim().to_string() };
-        return Outcome::File(FileRequest::New(json!({ "name": name, "categories": f.categories, "sample": f.sample })));
+        let mut p = json!({ "name": name, "categories": f.categories, "sample": f.sample });
+        if !f.password.is_empty() {
+            p["password"] = json!(f.password);
+        }
+        return Outcome::File(FileRequest::New(p));
     }
     Outcome::Keep
 }
@@ -1108,6 +1193,70 @@ fn rename(ui: &mut Ui, f: &mut RenameForm, t: &Tokens) -> Outcome {
     }
     if go || ui.input(|i| i.key_pressed(Key::Enter)) {
         return Outcome::Run(vec![("book.rename", json!({ "name": f.name }))]);
+    }
+    Outcome::Keep
+}
+
+fn unlock(ui: &mut Ui, f: &mut UnlockForm, t: &Tokens) -> Outcome {
+    ui.set_width(420.0);
+    if title_bar(ui, "Password needed", t) {
+        return Outcome::Close;
+    }
+    ui.label(egui::RichText::new(format!("{} is protected with a password.", f.name)).size(12.5).color(t.text_dim));
+    ui.add_space(10.0);
+    let r = password_box(ui, &mut f.password, "Password", t);
+    if !f.focused {
+        r.request_focus();
+        f.focused = true;
+    }
+    error_line(ui, &f.error, t);
+    let (go, cancel) = buttons(ui, "Open", t);
+    if cancel {
+        return Outcome::Close;
+    }
+    if (go || ui.input(|i| i.key_pressed(Key::Enter))) && !f.password.is_empty() {
+        let pw = std::mem::take(&mut f.password);
+        return match &f.path {
+            Some(path) => Outcome::Run(vec![("file.open", json!({ "path": path, "password": pw }))]),
+            None => Outcome::Unlocked(pw),
+        };
+    }
+    Outcome::Keep
+}
+
+fn set_password(s: &Session, ui: &mut Ui, f: &mut SetPasswordForm, t: &Tokens) -> Outcome {
+    ui.set_width(440.0);
+    let change = s.encrypted();
+    if title_bar(ui, if change { "Change the password" } else { "Protect with a password" }, t) {
+        return Outcome::Close;
+    }
+    ui.label(
+        egui::RichText::new(
+            "The file is encrypted with this password. Without it nobody can open the book, not even you: there is no way to get it back.",
+        )
+        .size(12.5)
+        .color(t.text_dim),
+    );
+    ui.add_space(10.0);
+    field(ui, "New password", t);
+    let r = password_box(ui, &mut f.password, "At least 8 characters", t);
+    if !f.focused {
+        r.request_focus();
+        f.focused = true;
+    }
+    ui.add_space(6.0);
+    password_box(ui, &mut f.repeat, "Type it again", t);
+    error_line(ui, &f.error, t);
+    let (go, cancel) = buttons(ui, if change { "Change password" } else { "Protect" }, t);
+    if cancel {
+        return Outcome::Close;
+    }
+    if go || ui.input(|i| i.key_pressed(Key::Enter)) {
+        if let Some(problem) = password_problem(&f.password, &f.repeat) {
+            f.error = Some(problem);
+            return Outcome::Keep;
+        }
+        return Outcome::Run(vec![("file.setPassword", json!({ "password": f.password }))]);
     }
     Outcome::Keep
 }

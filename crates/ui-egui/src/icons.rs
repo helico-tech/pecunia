@@ -191,6 +191,8 @@ pub enum Glyph {
     Bolt,
     /// Two arrows in opposite directions: a transfer.
     Swap,
+    /// A padlock: a protected book.
+    Lock,
 }
 
 pub fn glyph(p: &Painter, c: Pos2, size: f32, g: Glyph, col: Color32) {
@@ -424,6 +426,13 @@ pub fn glyph(p: &Painter, c: Pos2, size: f32, g: Glyph, col: Color32) {
                 ],
                 st,
             ));
+        }
+        Glyph::Lock => {
+            let body = Rect::from_min_max(pos2(c.x - s * 0.7, c.y - s * 0.1), pos2(c.x + s * 0.7, c.y + s * 0.85));
+            p.rect_stroke(body, 2.0, st, egui::StrokeKind::Middle);
+            p.add(Shape::line(ring(pos2(c.x, c.y - s * 0.3), s * 0.42, PI, TAU, 10), st));
+            p.line_segment([pos2(c.x - s * 0.42, c.y - s * 0.3), pos2(c.x - s * 0.42, c.y - s * 0.1)], st);
+            p.line_segment([pos2(c.x + s * 0.42, c.y - s * 0.3), pos2(c.x + s * 0.42, c.y - s * 0.1)], st);
         }
         Glyph::Swap => {
             p.line_segment([pos2(c.x - s * 0.8, c.y - s * 0.35), pos2(c.x + s * 0.8, c.y - s * 0.35)], st);

@@ -8,6 +8,7 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use pecunia_engine::model::{Book, Change};
+use pecunia_engine::store::crypto::{Key, Random, Unlock};
 use pecunia_engine::store::{self, Loaded, Store, StoreError};
 
 /// The file's modification time (ms) and size, as the browser reports them.
@@ -41,13 +42,19 @@ pub fn lock(s: &SharedRef) -> MutexGuard<'_, Shared> {
 
 pub struct BrowserFileStore {
     shared: SharedRef,
+    /// The key of a protected book, kept while it is open (ADR 0007).
+    key: Option<Key>,
+    /// The password to try on the next load.
+    password: Option<String>,
+    random: Random,
 }
 
 impl BrowserFileStore {
-    /// A store for a file just read (`bytes`, `stamp`); the returned handle is for the writer task.
-    pub fn new(name: &str, bytes: Vec<u8>, stamp: Option<Stamp>) -> (BrowserFileStore, SharedRef) {
+    /// A store for a file just read (`bytes`, `stamp`); the returned handle is for the writer task. `password` unlocks
+    /// a protected book; `random` is the browser's random source.
+    pub fn new(name: &str, bytes: Vec<u8>, stamp: Option<Stamp>, password: Option<String>, random: Random) -> (BrowserFileStore, SharedRef) {
         let shared = Arc::new(Mutex::new(Shared { name: name.to_string(), bytes, stamp, ..Shared::default() }));
-        (BrowserFileStore { shared: shared.clone() }, shared)
+        (BrowserFileStore { shared: shared.clone(), key: None, password, random }, shared)
     }
 }
 
@@ -64,7 +71,14 @@ impl Store for BrowserFileStore {
 
     fn load(&mut self) -> store::Result<Loaded> {
         let mut s = lock(&self.shared);
-        let loaded = store::decode(&s.bytes, &s.name)?;
+        let unlock = match (&self.password, &self.key) {
+            (Some(p), _) => Some(Unlock::Password(p.as_str())),
+            (None, Some(k)) => Some(Unlock::Key(k)),
+            (None, None) => None,
+        };
+        let (loaded, key) = store::decode_with(&s.bytes, &s.name, unlock)?;
+        self.password = None;
+        self.key = key;
         s.external = false;
         Ok(loaded)
     }
@@ -77,7 +91,7 @@ impl Store for BrowserFileStore {
         if s.external {
             return Err(StoreError::Conflict);
         }
-        let bytes = store::encode(book)?;
+        let bytes = store::encode_with(book, self.key.as_ref(), self.random)?;
         s.bytes = bytes.clone();
         s.pending = Some(bytes);
         // The engine shows "Not saved" until a write works again; the app retries then.
@@ -90,6 +104,23 @@ impl Store for BrowserFileStore {
     fn changed_externally(&mut self) -> bool {
         lock(&self.shared).external
     }
+
+    fn encrypted(&self) -> bool {
+        self.key.is_some()
+    }
+
+    fn set_password(&mut self, book: &Book, password: Option<&str>) -> store::Result<()> {
+        let key = password.map(|p| Key::new(p, self.random)).transpose()?;
+        let mut s = lock(&self.shared);
+        if s.external {
+            return Err(StoreError::Conflict);
+        }
+        let bytes = store::encode_with(book, key.as_ref(), self.random)?;
+        s.bytes = bytes.clone();
+        s.pending = Some(bytes);
+        self.key = key;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -99,10 +130,38 @@ mod tests {
 
     use super::*;
 
+    /// Counts instead of randomness, so tests are repeatable.
+    fn counter(buf: &mut [u8]) -> Result<(), String> {
+        for (i, b) in buf.iter_mut().enumerate() {
+            *b = i as u8;
+        }
+        Ok(())
+    }
+
     fn file() -> (BrowserFileStore, SharedRef, Book) {
         let book = Book::with_starter_categories("Web").unwrap();
-        let (store, shared) = BrowserFileStore::new("web.pecunia", store::encode(&book).unwrap(), Some((1.0, 2.0)));
+        let (store, shared) = BrowserFileStore::new("web.pecunia", store::encode(&book).unwrap(), Some((1.0, 2.0)), None, counter);
         (store, shared, book)
+    }
+
+    #[test]
+    fn protected_books_open_with_the_password_and_save_encrypted() {
+        let book = Book::with_starter_categories("Secret").unwrap();
+        let (mut plain, shared, _) = file();
+        plain.set_password(&book, Some("correct horse")).unwrap();
+        let bytes = lock(&shared).pending.clone().unwrap();
+        assert!(String::from_utf8_lossy(&bytes).contains("pecunia-encrypted"));
+        let (mut locked, _) = BrowserFileStore::new("secret.pecunia", bytes.clone(), None, None, counter);
+        assert_eq!(locked.load().unwrap_err(), StoreError::Locked);
+        let (mut wrong, _) = BrowserFileStore::new("secret.pecunia", bytes.clone(), None, Some("nope".into()), counter);
+        assert_eq!(wrong.load().unwrap_err(), StoreError::WrongPassword);
+        let (store, shared) = BrowserFileStore::new("secret.pecunia", bytes, None, Some("correct horse".into()), counter);
+        let mut s = Session::scratch();
+        s.open_store(Box::new(store)).unwrap();
+        assert!(s.encrypted());
+        s.execute("book.rename", json!({ "name": "Renamed" })).unwrap();
+        let saved = lock(&shared).pending.clone().unwrap();
+        assert!(!String::from_utf8_lossy(&saved).contains("Renamed"), "saves stay encrypted");
     }
 
     #[test]
@@ -146,7 +205,7 @@ mod tests {
 
     #[test]
     fn hostile_bytes_are_an_error() {
-        let (mut store, _shared) = BrowserFileStore::new("bad.pecunia", b"{\"format\":1".to_vec(), None);
+        let (mut store, _shared) = BrowserFileStore::new("bad.pecunia", b"{\"format\":1".to_vec(), None, None, counter);
         assert!(store.load().is_err());
     }
 

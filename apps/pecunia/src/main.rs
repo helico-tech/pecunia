@@ -13,8 +13,9 @@ mod prefs;
 
 use std::path::{Path, PathBuf};
 
-use pecunia_engine::Session;
 use pecunia_engine::store::FILE_EXTENSION;
+use pecunia_engine::store::StoreError;
+use pecunia_engine::{EngineError, Session};
 use pecunia_ui_egui::{FileRequest, ImportFile, PecuniaApp, ThemeMode};
 use serde_json::json;
 
@@ -159,29 +160,34 @@ impl eframe::App for App {
 
 /// The book to start with: the path given, else the last one used, else the default book
 /// (created on first run).
-fn start_session(args: &[String], prefs: &prefs::Prefs) -> (Session, Option<String>) {
-    if args.iter().any(|a| a == "--sample") {
-        return (Session::sample(), None);
+/// How the app starts: a session, a problem to show, and a protected book to ask the password for.
+struct Start {
+    session: Session,
+    problem: Option<String>,
+    locked: Option<String>,
+}
+
+fn start_session(args: &[String], prefs: &prefs::Prefs) -> Start {
+    let start = |session, problem| Start { session, problem, locked: None };
+    if args.iter().any(|a| a == "--sample" || a == "--demo") {
+        return start(Session::sample(), None);
     }
     let given = args.iter().find(|a| !a.starts_with("--")).cloned();
     let mut problem = None;
-    if let Some(p) = given {
+    if let Some(p) = given.or_else(|| prefs.recent.first().cloned()) {
         match Session::open(&p) {
-            Ok(s) => return (s, None),
+            Ok(s) => return start(s, None),
+            // A protected book: show an empty book behind the password dialog.
+            Err(EngineError::Store(StoreError::Locked)) => return Start { session: Session::scratch(), problem: None, locked: Some(p) },
             Err(e) => problem = Some(format!("Couldn't open {p}: {e}")),
-        }
-    } else if let Some(last) = prefs.recent.first() {
-        match Session::open(last) {
-            Ok(s) => return (s, None),
-            Err(e) => problem = Some(format!("Couldn't open {last}: {e}")),
         }
     }
     match default_book() {
-        Ok(s) => (s, problem),
+        Ok(s) => start(s, problem),
         Err(e) => {
             let msg =
                 format!("{}Couldn't open the default book: {e}. Changes are kept in memory only.", problem.map(|p| p + ". ").unwrap_or_default());
-            (Session::scratch(), Some(msg))
+            start(Session::scratch(), Some(msg))
         }
     }
 }
@@ -203,13 +209,16 @@ fn default_book() -> Result<Session, String> {
 fn main() -> eframe::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let prefs = prefs::load();
-    let (session, problem) = start_session(&args, &prefs);
+    let Start { session, problem, locked } = start_session(&args, &prefs);
     let mut app = PecuniaApp::new(session);
     app.ui.theme = ThemeMode::parse(&prefs.theme).unwrap_or_default();
     app.ui.sidebar = prefs.sidebar.unwrap_or(true);
     app.ui.recent = prefs.recent.clone();
     if let Some(p) = problem {
         app.toast(p, false, true);
+    }
+    if let Some(path) = locked {
+        app.open_dialog("unlock", json!({ "path": path }));
     }
     app.route();
     let mut state = App {

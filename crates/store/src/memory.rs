@@ -21,7 +21,7 @@ impl Store for MemoryStore {
     }
 
     fn load(&mut self) -> Result<Loaded> {
-        Ok(Loaded { book: self.book.clone(), notes: Vec::new() })
+        Ok(Loaded { book: self.book.clone(), notes: Vec::new(), migrated_from: None })
     }
 
     fn apply(&mut self, _book: &Book, changes: &[Change]) -> Result<()> {

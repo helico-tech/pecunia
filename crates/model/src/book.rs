@@ -15,6 +15,9 @@ use crate::{ModelError, Result, invalid, limits};
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BookMeta {
     pub name: String,
+    /// A made-up book to try things out (the sample household). The apps say so on every screen.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub demo: bool,
     /// The numbers the next new account, transaction, rule and import get. Numbers are never reused.
     #[serde(default = "one")]
     pub next_account: u64,

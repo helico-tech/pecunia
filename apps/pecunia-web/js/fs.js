@@ -184,3 +184,10 @@ export function saveTheme(id) {
     localStorage.setItem("pecunia.theme", id);
   } catch {}
 }
+
+/** `n` bytes from the browser's cryptographic random source (salts and nonces for protected books). */
+export function randomBytes(n) {
+  const a = new Uint8Array(n);
+  crypto.getRandomValues(a);
+  return a;
+}

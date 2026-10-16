@@ -15,6 +15,12 @@ Household bookkeeping that stays on your computer, in pure Rust.
   changes), and a bank check against the balances your bank states.
 - **One book is one `.pecunia` file.** Every change saves on its own, with undo. If another
   program changes the file (the CLI, an agent over MCP, a sync tool), the app reloads it.
+- **Optional password.** A protected book is encrypted (Argon2id + XChaCha20-Poly1305). The
+  password is never stored; without it nobody can open the book, not even you.
+- **Files keep opening.** Every new version reads every older file (migrations, with a backup of
+  the original); CI opens a frozen book of each file version on every run.
+- **Try it first:** the browser app (and `pecunia --demo`) opens a clearly marked DEMO household;
+  nothing in it is real.
 - **The same commands everywhere:** the desktop app, the browser app, `pecunia-cli`, and MCP tools
   for agents.
 
@@ -47,6 +53,8 @@ pecunia-cli review home.pecunia
 pecunia-cli answer home.pecunia 42 Groceries --always
 pecunia-cli list home.pecunia --account ING --from 2026-10-01
 pecunia-cli report home.pecunia income --from 2026-09-01 --to 2026-09-30
+PECUNIA_PASSWORD=… pecunia-cli password home.pecunia --new-password-file pw.txt   # protect (or change)
+PECUNIA_PASSWORD=… pecunia-cli list home.pecunia      # a protected book needs PECUNIA_PASSWORD or --password-file
 pecunia-cli commands                                  # every command; `run --cmd 'id={json}'` runs any of them
 ```
 
@@ -54,6 +62,7 @@ pecunia-cli commands                                  # every command; `run --cm
 
 ```sh
 claude mcp add pecunia -- pecunia-cli mcp /absolute/path/to/home.pecunia
+# a protected book: claude mcp add pecunia -e PECUNIA_PASSWORD=… -- pecunia-cli mcp /absolute/path/to/home.pecunia
 ```
 
 Every engine command becomes a tool (`book_info`, `review_list`, `txn_answer`, `import_file`,

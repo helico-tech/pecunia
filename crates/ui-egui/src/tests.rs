@@ -132,3 +132,16 @@ fn overview_opens_review_and_pots_add_a_pot() {
     h.run_steps(2);
     assert!(matches!(h.state().ui.dialog, Some(crate::dialogs::Dialog::NewAccount(_))));
 }
+
+#[test]
+fn the_demo_says_so_and_books_can_get_a_password() {
+    let mut h = harness(sample());
+    h.run_steps(3);
+    assert!(h.query_all_by_label("Demo book").count() >= 2, "the banner and the sidebar both say DEMO");
+    h.state_mut().run_any("file.setPassword", serde_json::json!({}));
+    h.run_steps(2);
+    assert!(matches!(h.state().ui.dialog, Some(crate::dialogs::Dialog::SetPassword(_))));
+    let mut plain = harness(PecuniaApp::new(Session::scratch()));
+    plain.run_steps(3);
+    assert_eq!(plain.query_all_by_label("Demo book").count(), 0);
+}

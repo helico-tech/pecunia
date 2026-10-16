@@ -35,6 +35,11 @@ Details: [docs/architecture.md](docs/architecture.md). Decisions: [docs/adr/](do
 - **Never crash.** No `unwrap`/`expect`/`panic!`/indexing on input in non-test code (crate roots deny
   them; `unsafe` is forbidden). Files, bank files, command params and MCP input are hostile.
   `engine::tests::hostile_params_never_panic` must stay green.
+- **File format changes follow ADR 0006.** A change an older app would misread bumps `VERSION`, appends a
+  migration to `MIGRATIONS` (`crates/store/src/file.rs`) and writes new fixtures (`cargo test -p pecunia-engine
+  --test file_versions -- --ignored write_fixtures`). Never edit an old fixture or migration.
+- **Passwords** (ADR 0007): never stored, logged or kept in the journal (the engine redacts `password` params); the
+  CLI and MCP read `PECUNIA_PASSWORD` or `--password-file`.
 - **Storage goes through `Store` only.** **The UI is thin**: it reads `Session` and acts through commands.
 - **No network.** No transaction data leaves the machine (ADR 0004). Tests and samples use synthetic
   bank data only; never commit real bank exports.

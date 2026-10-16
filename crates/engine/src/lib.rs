@@ -113,11 +113,38 @@ impl Session {
 
     /// Opens the store at `location` (a file path or `memory:`) and loads it.
     pub fn open(location: &str) -> Result<Session> {
-        let mut store = pecunia_store::open(location)?;
+        Session::open_with(location, None)
+    }
+
+    /// Opens the store at `location` with the password of an encrypted book (ADR 0007).
+    pub fn open_with(location: &str, password: Option<&str>) -> Result<Session> {
+        let mut store = pecunia_store::open(location, password)?;
         let loaded = store.load()?;
         let mut s = Session::new(store, loaded.book);
-        s.repaired(&loaded.notes);
+        s.loaded(&loaded.notes, loaded.migrated_from);
         Ok(s)
+    }
+
+    /// Tells the person what loading did: repairs to the stored data, a migration from an older file version.
+    fn loaded(&mut self, notes: &[String], migrated_from: Option<u32>) {
+        if let Some(v) = migrated_from {
+            self.notify(format!("This book was made by an older Pecunia (file version {v}). It is updated; the old file is kept as a .v{v}.bak copy when it is next saved."), false);
+        }
+        self.repaired(notes);
+    }
+
+    /// Whether the book is stored with a password.
+    pub fn encrypted(&self) -> bool {
+        self.store.encrypted()
+    }
+
+    /// Whether the open book is the made-up demo household.
+    pub fn is_demo(&self) -> bool {
+        self.book.meta.demo
+    }
+
+    pub(crate) fn store_mut(&mut self) -> &mut dyn Store {
+        self.store.as_mut()
     }
 
     fn repaired(&mut self, notes: &[String]) {
@@ -135,7 +162,7 @@ impl Session {
         let loaded = store.load()?;
         self.replace(Some(store), loaded.book);
         self.selection = None;
-        self.repaired(&loaded.notes);
+        self.loaded(&loaded.notes, loaded.migrated_from);
         Ok(())
     }
 
@@ -277,7 +304,7 @@ impl Session {
             return result;
         }
         if spec.kind != cmd::Kind::Query {
-            self.journal.push((id.to_string(), params));
+            self.journal.push((id.to_string(), redact(params)));
             if self.journal.len() > JOURNAL_LIMIT {
                 self.journal.drain(..JOURNAL_LIMIT / 2);
             }
@@ -307,6 +334,7 @@ impl Session {
                 "newAccount" => "`kind` and `name`",
                 "import" => "`path` (or `contentBase64` and `name`)",
                 "newBook" | "open" => "`path`",
+                "unlock" => "`password` (this book is protected; the CLI and MCP read PECUNIA_PASSWORD)",
                 _ => "params",
             };
             return Err(EngineError::BadParams { cmd: id.into(), msg: format!("missing {what}: programmatic calls never open dialogs") });
@@ -408,6 +436,14 @@ impl Session {
     pub(crate) fn clock(&self) -> i64 {
         (self.now)()
     }
+}
+
+/// Params without secrets, for the journal: a `password` becomes `"•••"`.
+fn redact(mut params: Json) -> Json {
+    if let Some(p) = params.get_mut("password").filter(|p| !p.is_null()) {
+        *p = Json::String("•••".into());
+    }
+    params
 }
 
 #[cfg(test)]
