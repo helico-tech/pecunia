@@ -118,3 +118,17 @@ fn reports_switch_step_and_open_a_category() {
         assert_eq!(h.state().session.view.report, kind);
     }
 }
+
+#[test]
+fn overview_opens_review_and_pots_add_a_pot() {
+    let mut h = harness(sample());
+    h.run_steps(3);
+    h.get_by_label("Open Review").click();
+    h.run_steps(2);
+    assert_eq!(h.state().session.view.screen, Screen::Review);
+    h.state_mut().go(Screen::Pots);
+    h.run_steps(3);
+    h.get_by_label("New pot in ING Oranje Spaar").click();
+    h.run_steps(2);
+    assert!(matches!(h.state().ui.dialog, Some(crate::dialogs::Dialog::NewAccount(_))));
+}
