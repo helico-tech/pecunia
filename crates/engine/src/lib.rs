@@ -80,6 +80,8 @@ pub struct Session {
     pub save_error: Option<String>,
     /// The clock (Unix milliseconds). Tests replace it.
     pub now: fn() -> i64,
+    /// Goes up whenever the book may have changed; UIs use it to know when to recompute.
+    revision: u64,
 }
 
 /// `web-time` is `std::time` on native and the JS clock in the browser (where `std`'s clock panics).
@@ -105,6 +107,7 @@ impl Session {
             notices: Vec::new(),
             save_error: None,
             now: system_now,
+            revision: 0,
         }
     }
 
@@ -210,7 +213,13 @@ impl Session {
     /// Changes the book. Commands call this; it clones the book only when an undo snapshot still shares it (records
     /// themselves stay shared).
     pub(crate) fn book_mut(&mut self) -> &mut Book {
+        self.revision = self.revision.wrapping_add(1);
         Arc::make_mut(&mut self.book)
+    }
+
+    /// A number that changes whenever the book may have changed (an edit, undo, a reload).
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     /// Replaces the open book (open, new, reload): clears undo and keeps the selection only if it still exists.
@@ -222,6 +231,7 @@ impl Session {
         let book = Arc::new(book);
         self.saved = book.clone();
         self.book = book;
+        self.revision = self.revision.wrapping_add(1);
         self.undo.clear();
         self.redo.clear();
         self.save_error = None;
@@ -252,6 +262,7 @@ impl Session {
         let result = match result {
             Ok(r) => r,
             Err(p) => {
+                self.revision = self.revision.wrapping_add(1);
                 let msg =
                     p.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| p.downcast_ref::<String>().cloned()).unwrap_or_else(|| "panic".into());
                 self.book = before.0;
@@ -261,6 +272,7 @@ impl Session {
         };
         if result.is_err() {
             // A failed command leaves the book as it was.
+            self.revision = self.revision.wrapping_add(1);
             self.book = before.0;
             return result;
         }
@@ -372,6 +384,7 @@ impl Session {
 
     pub(crate) fn undo_step(&mut self) -> Option<String> {
         let h = self.undo.pop()?;
+        self.revision = self.revision.wrapping_add(1);
         let label = h.label.clone();
         self.redo.push(History { label: h.label, book: std::mem::replace(&mut self.book, h.book), selection: self.selection });
         self.selection = h.selection;
@@ -380,6 +393,7 @@ impl Session {
 
     pub(crate) fn redo_step(&mut self) -> Option<String> {
         let h = self.redo.pop()?;
+        self.revision = self.revision.wrapping_add(1);
         let label = h.label.clone();
         self.undo.push(History { label: h.label, book: std::mem::replace(&mut self.book, h.book), selection: self.selection });
         self.selection = h.selection;

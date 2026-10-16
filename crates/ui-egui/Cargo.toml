@@ -1,0 +1,20 @@
+[package]
+name = "pecunia-ui-egui"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+description = "Pecunia egui front end; swappable — nothing below depends on it"
+
+[lints]
+workspace = true
+
+[dependencies]
+pecunia-engine = { workspace = true }
+egui = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }
+image = { version = "0.25", default-features = false, features = ["png"] }

@@ -3,5 +3,7 @@ name = "xtask"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+description = "Repo tasks: ci, layers, bundle"
 
 [dependencies]
+serde_json = { workspace = true }
