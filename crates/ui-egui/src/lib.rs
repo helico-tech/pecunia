@@ -159,6 +159,11 @@ impl PecuniaApp {
         PecuniaApp { session, ui: UiState::default() }
     }
 
+    /// Whether the fonts are bound, so a host may draw with them (the first frame only sets them up).
+    pub fn fonts_ready(&self) -> bool {
+        self.ui.fonts_ready
+    }
+
     pub fn tokens(&self) -> Tokens {
         Tokens::get(self.ui.dark)
     }
@@ -493,7 +498,9 @@ impl PecuniaApp {
             let (r, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
             ui.painter().circle_filled(r.center(), 3.5, dot);
             ui.label(egui::RichText::new(text).size(11.5).color(if self.session.save_error.is_some() { t.danger } else { t.text_dim }));
-            ui.label(egui::RichText::new(self.session.location()).size(11.5).color(t.text_faint)).on_hover_text("Where this book is stored");
+            if self.session.store_path().is_some() || !self.session.is_demo() {
+                ui.label(egui::RichText::new(self.session.location()).size(11.5).color(t.text_faint)).on_hover_text("Where this book is stored");
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let b = self.session.book();
                 let waiting = b.review_count();

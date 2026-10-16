@@ -145,3 +145,13 @@ fn the_demo_says_so_and_books_can_get_a_password() {
     plain.run_steps(3);
     assert_eq!(plain.query_all_by_label("Demo book").count(), 0);
 }
+
+/// Hosts that draw around the UI (the web app's banner) must wait for the fonts: egui panics on a font family
+/// that is not bound yet. The first frame binds them.
+#[test]
+fn fonts_are_ready_only_after_the_first_frame() {
+    let mut h = harness(sample());
+    assert!(!h.state().fonts_ready());
+    h.run_steps(1);
+    assert!(h.state().fonts_ready());
+}

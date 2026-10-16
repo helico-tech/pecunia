@@ -302,7 +302,8 @@ impl App {
     }
 
     fn banner(&mut self, ui: &mut egui::Ui) {
-        if self.file.is_some() {
+        // The UI binds its fonts on the first frame; drawing the bold badge before that panics in egui.
+        if self.file.is_some() || !self.app.fonts_ready() {
             return;
         }
         let t = self.app.tokens();
