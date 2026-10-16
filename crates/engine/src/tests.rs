@@ -237,3 +237,60 @@ fn reports_answer_in_cents() {
     let check = s.execute("report.bankCheck", json!({})).unwrap();
     assert!(check["accounts"].as_array().is_some_and(|a| !a.is_empty()));
 }
+
+fn bank_file(format: pecunia_formats::samples::BankFileFormat) -> Vec<u8> {
+    use pecunia_formats::samples::{BankFileAccount, BankFileTx, write};
+    let account = BankFileAccount { key: "ing".into(), iban: "NL12INGB0001234567".into() };
+    let tx = |seq: u32, day: u32, cents: i64, name: &str, desc: &str| BankFileTx {
+        seq,
+        date: pecunia_model::NaiveDate::from_ymd_opt(2026, 9, day).unwrap(),
+        amount: Money(cents),
+        name: name.into(),
+        iban: None,
+        description: desc.into(),
+        reference: format!("REF{seq}"),
+    };
+    let txs = [
+        tx(1, 2, -5210, "Albert Heijn 1427", "Boodschappen"),
+        tx(2, 25, 345_000, "Werkgever BV", "Salaris"),
+        tx(3, 28, -1399, "Netflix", "Abonnement"),
+    ];
+    write(format, &account, &txs, Money(100_000))
+}
+
+#[test]
+fn imports_bank_files_once() {
+    use base64::Engine as _;
+    let mut s = with_accounts();
+    let bytes = bank_file(pecunia_formats::samples::BankFileFormat::IngCsv);
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    let preview = s.execute("import.preview", json!({"contentBase64": b64, "name": "ing.csv"})).unwrap();
+    assert_eq!(preview["recognised"], true);
+    assert_eq!(preview["account"], "ING", "found by the IBAN in the file");
+    assert_eq!(preview["import"]["new"], 3);
+    assert_eq!(s.book().txn_count(), 2, "a preview changes nothing (two starting balances)");
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("ing.csv");
+    std::fs::write(&path, &bytes).unwrap();
+    let r = s.execute("import.file", json!({"path": path.to_str().unwrap()})).unwrap();
+    assert_eq!((r["new"].as_u64(), r["toReview"].as_u64()), (Some(3), Some(3)));
+    assert_eq!(s.view.filter.import.map(|i| i.0), r["import"].as_u64(), "the register shows what came in");
+    let again = s.execute("import.file", json!({"contentBase64": b64, "name": "ing.csv"})).unwrap();
+    assert_eq!((again["new"].as_u64(), again["known"].as_u64()), (Some(0), Some(3)));
+    s.execute("import.undo", json!({"id": r["import"]})).unwrap();
+    assert_eq!(s.book().txn_count(), 2);
+
+    let mt940 = bank_file(pecunia_formats::samples::BankFileFormat::Mt940);
+    let r = s.execute("import.file", json!({"contentBase64": base64::engine::general_purpose::STANDARD.encode(&mt940), "name": "x.sta"})).unwrap();
+    assert_eq!(r["format"], "MT940");
+    assert!(!s.book().meta.balances.is_empty(), "MT940 states a closing balance");
+
+    let junk = s
+        .execute("import.preview", json!({"contentBase64": base64::engine::general_purpose::STANDARD.encode(b"a;b;c\n1;2;3\n"), "name": "x.csv"}))
+        .unwrap();
+    assert_eq!(junk["recognised"], false);
+    assert_eq!(junk["csv"]["headers"], json!(["a", "b", "c"]));
+    assert!(s.execute("import.file", json!({"contentBase64": "!!!"})).is_err());
+    assert_eq!(s.book().validate(), Ok(()));
+}

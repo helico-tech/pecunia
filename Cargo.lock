@@ -261,6 +261,7 @@ dependencies = [
  "base64",
  "chrono",
  "log",
+ "pecunia-formats",
  "pecunia-model",
  "pecunia-store",
  "serde",
