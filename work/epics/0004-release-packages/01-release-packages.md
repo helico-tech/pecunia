@@ -47,3 +47,8 @@ the gaps; build the Mac packages locally; parse the workflow YAML.
 ## Follow-ups
 - [0007 Sign and notarise the builds](../../issues/0007-sign-and-notarise.md)
 - First tagged release (`v0.1.0`): the owner decides when.
+
+- 2026-10-17: v0.2.0 published four v0.1.0 packages and the container job's build record too: the restored build
+  cache held old `target/dist` files, and download-artifact took every artifact. Fixed by hand on the release
+  (assets removed, SHA256SUMS rebuilt) and in the workflow: caches skip `target/dist`, publish downloads only the
+  package artifacts and drops files of other versions.

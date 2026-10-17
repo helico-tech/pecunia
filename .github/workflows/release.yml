@@ -28,9 +28,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
+            !target/dist
           key: release-macos-${{ hashFiles('Cargo.lock') }}
           restore-keys: release-macos-
-      - run: cargo xtask bundle --universal --dmg
+      - run: rm -rf target/dist && cargo xtask bundle --universal --dmg
       - uses: actions/upload-artifact@v7
         with:
           name: macos
@@ -64,6 +65,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
+            !target/dist
           key: release-linux-${{ matrix.arch }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: release-linux-${{ matrix.arch }}-
       - run: cargo xtask package-linux
@@ -88,6 +90,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
+            !target/dist
           key: release-windows-${{ hashFiles('Cargo.lock') }}
           restore-keys: release-windows-
       - run: cargo xtask package-windows
@@ -108,14 +111,19 @@ jobs:
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME does not match version $version"; exit 1; }
+      # Only the packages (not the container job's build record).
       - uses: actions/download-artifact@v8
         with:
           path: dist
+          pattern: "{macos,linux-*,windows}"
           merge-multiple: true
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # A restored build cache may hold packages of older versions: publish this version's only.
+          version="${GITHUB_REF_NAME#v}"
+          find dist -type f ! -name "*-$version-*" -print -delete
           ls -la dist
           (cd dist && shasum -a 256 * > SHA256SUMS.txt)
           gh release create "$GITHUB_REF_NAME" dist/* --title "Pecunia $GITHUB_REF_NAME" --generate-notes \
@@ -179,6 +187,7 @@ jobs:
             ~/.cargo/git
             ~/.cargo/bin/wasm-bindgen
             target
+            !target/dist
           key: release-web-${{ hashFiles('Cargo.lock') }}
           restore-keys: release-web-
       - name: Rust toolchain and wasm-bindgen
