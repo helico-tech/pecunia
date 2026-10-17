@@ -29,6 +29,13 @@ pub struct OwnAccountCandidate {
     pub txns: Vec<TxnId>,
 }
 
+impl OwnAccountCandidate {
+    /// Its key in [`BookMeta::dismissed`](crate::book::BookMeta): "someone else's account".
+    pub fn key(&self) -> String {
+        format!("notmine:{}", self.iban)
+    }
+}
+
 /// Counterparty IBANs of bank transactions that are not own accounts, with money going there and coming back at least
 /// twice each; most transactions first. The caller leaves out IBANs the person already answered.
 pub fn own_account_candidates(tree: &AccountTree, txns: &[&Txn]) -> Vec<OwnAccountCandidate> {

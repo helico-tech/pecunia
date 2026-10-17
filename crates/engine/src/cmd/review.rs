@@ -24,10 +24,11 @@ fn accept(s: &mut Session, p: &Json) -> Result<Json> {
         Some(v) => Some(v.iter().map(|x| resolve_txn(s, C, x, "ids")).collect::<Result<Vec<_>>>()?),
     };
     let n = s.book_mut().accept_suggestions(ids.as_deref())?;
+    let booked = s.book_mut().apply_rules();
     if n > 0 {
-        s.notify(format!("Accepted {n} suggestion{}", if n == 1 { "" } else { "s" }), true);
+        s.notify(format!("Accepted {n} suggestion{}{}", if n == 1 { "" } else { "s" }, booked_text(booked)), true);
     }
-    Ok(json!({ "accepted": n }))
+    Ok(json!({ "accepted": n, "booked": booked }))
 }
 
 fn answer_all_like(s: &mut Session, p: &Json) -> Result<Json> {
@@ -35,7 +36,11 @@ fn answer_all_like(s: &mut Session, p: &Json) -> Result<Json> {
     let id = target(s, C, p)?;
     let to = req_account(s, C, p, "to")?;
     let n = s.book_mut().answer_all_like(id, to)?;
-    Ok(json!({ "answered": n }))
+    let booked = s.book_mut().apply_rules();
+    if booked > 0 {
+        s.notify(format!("Answered {n}{}", booked_text(booked)), true);
+    }
+    Ok(json!({ "answered": n, "booked": booked }))
 }
 
 fn not_a_transfer(s: &mut Session, p: &Json) -> Result<Json> {

@@ -1,7 +1,7 @@
 # 0005. Web app edits local files, hosted at pecunia.helico.app
 
 ## Status
-accepted (2026-10-16). The same approach as OpenIssue ADR 0004.
+accepted (2026-10-16). The same approach as OpenIssue ADR 0004. Extended by ADR 0009 (books kept in the browser where files can't be edited).
 
 ## Context
 Pecunia should also run in a browser while the data stays the person's own `.pecunia` file. Bank

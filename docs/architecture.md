@@ -19,7 +19,7 @@ policy, and one data file per book (ADR 0002).
 | L4 | `crates/ui-egui` | `PecuniaApp`: sidebar, Overview, Review, register, Pots, Reports, Accounts, Rules, Imports, the transaction detail pane, dialogs, palette, toasts. `theme::Tokens` (light/dark), `icons.rs` (all drawn in code), `pickers.rs`, `widgets.rs`. Examples: `snapshot` (offscreen PNG), `app_icon`. |
 | apps | `apps/pecunia` | eframe/wgpu window, native macOS menu, file dialogs, prefs and recent books, default book, quit through `craft-quit`. |
 | apps | `apps/pecunia-cli` | `init`, `accounts`, `add-account`, `import`, `list`, `show`, `add`, `review`, `answer`, `report`, `run`, `commands`, `mcp`. |
-| apps | `apps/pecunia-web` | The same UI as wasm (https://pecunia.helico.app). The book is a local file through the File System Access API; bank files come in through the browser's file picker (ADR 0005). |
+| apps | `apps/pecunia-web` | The same UI as wasm (https://pecunia.helico.app). The book is a local file through the File System Access API; bank files come in through the browser's file picker (ADR 0005). Without that API (phones) books are kept in the browser's IndexedDB; installable and offline through `manifest.webmanifest` and `sw.js` (ADR 0009). |
 | — | `xtask` | `ci`, `layers`, `bundle [--universal] [--dmg]` (macOS `.app`, `.dmg`, CLI archive), `package-linux`, `package-windows` (the release downloads in `target/dist/`, built by `.github/workflows/release.yml` on a `vX.Y.Z` tag), `web`, `icon`. |
 
 ## The books (ADR 0003)
@@ -39,7 +39,7 @@ A book is one `.pecunia` file (ADR 0002), UTF-8 JSON, pretty-printed:
   "version": 1,
   "meta": { "name": "…", "demo": false, "next_account": 41, "next_txn": 312, "next_rule": 18,
             "next_import": 8, "profiles": [ CSV layouts ], "balances": [ stated bank balances ],
-            "imports": [ import log ] },
+            "imports": [ import log ], "dismissed": [ answered Needs attention keys ] },
   "accounts": [ { "id", "group", "kind", "parent", "name", "iban", "unassigned", "system", "goal", … } ],
   "transactions": [ { "id", "kind", "date", "payee", "payee_norm", "account", "bank_amount",
                       "source", "import", "status", "guesses", "postings": [ { "account", "amount" } ],

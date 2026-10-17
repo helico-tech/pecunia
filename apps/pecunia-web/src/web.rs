@@ -37,6 +37,11 @@ extern "C" {
     async fn remember(handle: &JsValue) -> Result<JsValue, JsValue>;
     #[wasm_bindgen(catch, js_name = lastHandle)]
     async fn last_handle() -> Result<JsValue, JsValue>;
+    #[wasm_bindgen(catch, js_name = listBooks)]
+    async fn list_books() -> Result<JsValue, JsValue>;
+    #[wasm_bindgen(js_name = browserBook)]
+    fn browser_book(name: &str) -> JsValue;
+    fn download(name: &str, bytes: &[u8]);
     #[wasm_bindgen(catch)]
     async fn sleep(ms: u32) -> Result<JsValue, JsValue>;
     #[wasm_bindgen(js_name = setTitle)]
@@ -61,7 +66,6 @@ fn web_random(buf: &mut [u8]) -> Result<(), String> {
     Ok(())
 }
 
-const RELEASES: &str = "https://github.com/helico-tech/pecunia/releases";
 const REPO: &str = "https://github.com/helico-tech/pecunia";
 
 /// Starts the app on `<canvas id="app">`.
@@ -105,6 +109,8 @@ enum Event {
         name: String,
         bytes: Vec<u8>,
     },
+    /// The books kept in this browser, to choose one from.
+    Books(Vec<String>),
     Failed(String),
 }
 
@@ -118,7 +124,10 @@ struct App {
     file: Option<SharedRef>,
     /// The file to offer in the banner ("Reopen …").
     last: Option<(JsValue, String)>,
-    supported: bool,
+    /// No File System Access API: books are kept in the browser's own storage (ADR 0009).
+    in_browser: bool,
+    /// The books kept in this browser, while the person picks one.
+    chooser: Option<Vec<String>>,
     title: String,
     /// The appearance last saved to the browser.
     theme: ThemeMode,
@@ -129,12 +138,12 @@ struct App {
 
 impl App {
     fn new(ctx: &egui::Context) -> App {
-        let supported = supported();
+        let in_browser = !supported();
         let mut pecunia = PecuniaApp::new(Session::sample());
         pecunia.ui.theme = ThemeMode::parse(&load_theme()).unwrap_or_default();
         let theme = pecunia.ui.theme;
         pecunia.ui.footer_link = Some(("Pecunia on GitHub".into(), REPO.into()));
-        pecunia.ui.can_pick_files = supported;
+        pecunia.ui.books_in_browser = in_browser;
         // The web app draws its own DEMO banner, with the browser's file actions.
         pecunia.ui.demo_banner = false;
         let app = App {
@@ -143,13 +152,14 @@ impl App {
             inbox: Rc::default(),
             file: None,
             last: None,
-            supported,
+            in_browser,
+            chooser: None,
             title: String::new(),
             theme,
             shown_write_error: None,
             locked: None,
         };
-        if app.supported {
+        {
             app.spawn(async {
                 let handle = last_handle().await.ok().filter(|h| !h.is_null() && !h.is_undefined())?;
                 let name = js_string(&handle, "name");
@@ -174,6 +184,42 @@ impl App {
                 ctx.request_repaint();
             }
         });
+    }
+
+    /// In the browser's storage: the books kept here to choose from (or a file, when there are none yet).
+    fn open_book(&self) {
+        if !self.in_browser {
+            return self.open_picker();
+        }
+        self.spawn(async {
+            let names: Vec<String> = match list_books().await {
+                Ok(v) => js_sys::Array::from(&v).iter().filter_map(|n| n.as_string()).collect(),
+                Err(e) => return Some(Event::Failed(format!("Couldn't read the browser's storage: {}", js_error(&e)))),
+            };
+            if names.is_empty() {
+                return match pick_open().await {
+                    Ok(h) if h.is_null() => None,
+                    Ok(h) => Some(open_with_permission(h).await),
+                    Err(e) => Some(Event::Failed(format!("Couldn't open the file: {}", js_error(&e)))),
+                };
+            }
+            Some(Event::Books(names))
+        });
+    }
+
+    /// A copy of the open book (or the demo) as a download: the way to take a book out of the browser.
+    fn save_copy(&mut self) {
+        let name = match &self.file {
+            Some(shared) => lock(shared).name.clone(),
+            None => format!("{}.{FILE_EXTENSION}", self.app.session.book().name()),
+        };
+        match self.app.session.snapshot() {
+            Ok(bytes) => {
+                download(&name, &bytes);
+                self.app.toast(format!("Downloaded a copy: {name}"), false, false);
+            }
+            Err(e) => self.app.toast(format!("Couldn't make a copy: {e}"), false, true),
+        }
     }
 
     fn open_picker(&self) {
@@ -253,6 +299,7 @@ impl App {
                 Event::Opened { handle, name, bytes, stamp, note, password } => {
                     let tried = password.is_some();
                     let (store, shared) = BrowserFileStore::new(&name, bytes.clone(), Some(stamp), password, web_random);
+                    let store = if is_browser_book(&handle) { store.kept_in_browser() } else { store };
                     match self.app.session.open_store(Box::new(store)) {
                         Err(EngineError::Store(e @ (StoreError::Locked | StoreError::WrongPassword))) => {
                             let error = (tried || e == StoreError::WrongPassword).then_some("Wrong password, or the file is damaged.");
@@ -274,6 +321,7 @@ impl App {
                     self.app.route();
                 }
                 Event::Last { handle, name } => self.last = Some((handle, name)),
+                Event::Books(names) => self.chooser = Some(names),
                 Event::Import { name, bytes } => {
                     let base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
                     self.app.open_import(ImportFile::Content { name, base64 });
@@ -316,20 +364,12 @@ impl App {
             .show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     pecunia_ui_egui::widgets::demo_badge(ui, 12.0, &t);
-                    if !self.supported {
-                        let text = if compact {
-                            "A made-up household. Nothing is saved: this browser can't edit your files. Use Chrome or Edge on a computer, or the desktop app."
-                        } else {
-                            "You are looking at a made-up household. Nothing is saved: this browser can't edit files on your computer. Use Chrome or Edge, or the desktop app."
-                        };
-                        ui.label(egui::RichText::new(text).color(t.text));
-                        ui.hyperlink_to("Download Pecunia", RELEASES);
-                        return;
-                    }
-                    let text = if compact {
-                        "A made-up household. Nothing is saved."
-                    } else {
-                        "You are looking at a made-up household. Nothing here is real, and nothing is saved. Your own book is a file on your computer:"
+                    let text = match (compact, self.in_browser) {
+                        (true, _) => "A made-up household. Nothing is saved.",
+                        (false, true) => "You are looking at a made-up household. Nothing here is real, and nothing is saved. Your own book is kept in this browser:",
+                        (false, false) => {
+                            "You are looking at a made-up household. Nothing here is real, and nothing is saved. Your own book is a file on your computer:"
+                        }
                     };
                     ui.label(egui::RichText::new(text).color(t.text));
                     if ui.button("Start your own book…").clicked() {
@@ -346,7 +386,7 @@ impl App {
                 });
             });
         match action {
-            Some("open") => self.open_picker(),
+            Some("open") => self.open_book(),
             Some("new") => {
                 self.app.run("file.new", json!({}));
             }
@@ -360,6 +400,59 @@ impl App {
     }
 }
 
+impl App {
+    /// Picks one of the books kept in this browser, or a `.pecunia` file from the device (copied in).
+    fn book_chooser(&mut self, ui: &mut egui::Ui) {
+        use pecunia_ui_egui::icons::{self, Glyph};
+        use pecunia_ui_egui::{theme, widgets};
+        let Some(names) = self.chooser.clone() else { return };
+        let t = self.app.tokens();
+        let mut pick = None;
+        let mut from_file = false;
+        let mut cancel = false;
+        let frame = egui::Frame::new()
+            .fill(t.surface)
+            .stroke(egui::Stroke::new(1.0, t.border_strong))
+            .corner_radius(12)
+            .inner_margin(egui::Margin::same(20))
+            .shadow(egui::epaint::Shadow { offset: [0, 12], blur: 36, spread: 0, color: t.shadow });
+        let width = (ui.ctx().content_rect().width() - 72.0).clamp(200.0, 340.0);
+        let modal = egui::Modal::new(egui::Id::new("browser-books")).frame(frame).show(ui.ctx(), |ui| {
+            ui.set_width(width);
+            ui.label(egui::RichText::new("Open a book").font(theme::bold(16.0)).color(t.text));
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new("Books kept in this browser:").size(12.5).color(t.text_dim));
+            ui.add_space(8.0);
+            egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+                for name in &names {
+                    let label = name.strip_suffix(".pecunia").unwrap_or(name);
+                    if widgets::menu_row(ui, |p, c| icons::glyph(p, c, 13.0, Glyph::Folder, t.text_dim), label, false, &t).clicked() {
+                        pick = Some(name.clone());
+                    }
+                }
+            });
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                from_file = widgets::secondary_button(ui, "From a file…", &t)
+                    .on_hover_text("Copy a .pecunia file from this device into the browser")
+                    .clicked();
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    cancel = widgets::secondary_button(ui, "Cancel", &t).clicked();
+                });
+            });
+        });
+        if let Some(name) = pick {
+            self.chooser = None;
+            self.reopen(browser_book(&name));
+        } else if from_file {
+            self.chooser = None;
+            self.open_picker();
+        } else if cancel || modal.should_close() {
+            self.chooser = None;
+        }
+    }
+}
+
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.handle_events();
@@ -368,9 +461,9 @@ impl eframe::App for App {
         match self.app.ui.file_request.take() {
             // Bank files are only read, which every browser can do.
             Some(FileRequest::Import) => self.import_picker(),
-            Some(_) if !self.supported => self.app.toast("This browser can't open files on your computer. Use Chrome or Edge.", false, true),
-            Some(FileRequest::Open) => self.open_picker(),
+            Some(FileRequest::Open) => self.open_book(),
             Some(FileRequest::New(params)) => self.new_file(params),
+            Some(FileRequest::SaveCopy) => self.save_copy(),
             None => {}
         }
         if self.app.ui.theme != self.theme {
@@ -387,6 +480,7 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.banner(ui);
         self.app.ui(ui);
+        self.book_chooser(ui);
     }
 }
 
@@ -468,6 +562,11 @@ async fn outside_change(handle: &JsValue, shared: &SharedRef) -> bool {
     s.pending = None;
     s.external = true;
     true
+}
+
+/// A book kept in the browser's storage (`{ browser: true, name }` from `fs.js`), not a file.
+fn is_browser_book(handle: &JsValue) -> bool {
+    js_sys::Reflect::get(handle, &"browser".into()).ok().and_then(|b| b.as_bool()) == Some(true)
 }
 
 fn stamp(v: &JsValue) -> Stamp {

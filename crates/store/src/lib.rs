@@ -69,6 +69,11 @@ pub trait Store: Send {
         false
     }
 
+    /// Whether [`Store::set_password`] works here: files can be protected, memory can't.
+    fn can_protect(&self) -> bool {
+        self.path().is_some()
+    }
+
     /// Whether the book is stored encrypted (ADR 0007).
     fn encrypted(&self) -> bool {
         false
@@ -79,6 +84,14 @@ pub trait Store: Send {
     fn set_password(&mut self, _book: &Book, _password: Option<&str>) -> Result<()> {
         Err(StoreError::Io(format!("{} can't be protected with a password", self.describe())))
     }
+
+    /// The book as a `.pecunia` file holds it (encrypted when protected), for "Save a copy".
+    fn snapshot(&mut self) -> Result<Vec<u8>>;
+}
+
+/// Writes a copy of a book (from [`Store::snapshot`]) to a new file at `path`; never overwrites a file.
+pub fn save_copy(path: &Path, bytes: &[u8]) -> Result<()> {
+    craft_atomic::write_new(path, bytes).map_err(|e| StoreError::Io(format!("{}: {e}", path.display())))
 }
 
 /// Opens the store at `location`: `memory:` for a throwaway in-memory book, anything else is a file path. New

@@ -12,3 +12,8 @@ Access API and a person to pick files.
 
 ## Notes
 Open https://pecunia.helico.app in Chrome: New file…, import a bank export, reload, reopen.
+
+- 2026-10-17: Still needs a person. Driving Chrome from here failed: the screen-control helper has no
+  Accessibility or Screen Recording permission, and Playwright cannot click the native save dialog.
+  Also check on a real iPhone and Android phone (ADR 0009): start a book, edit, close and reopen, Add to Home
+  Screen, open offline, Save a copy.

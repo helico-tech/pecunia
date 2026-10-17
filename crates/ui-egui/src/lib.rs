@@ -65,6 +65,8 @@ pub enum FileRequest {
     New(Json),
     /// Ask for a bank file, then call [`PecuniaApp::open_import`] with it.
     Import,
+    /// Ask where to save a copy of the book, then run `file.saveCopy` with `path` (the browser downloads it).
+    SaveCopy,
 }
 
 /// A bank file the host app picked: a path (desktop) or the bytes (browser).
@@ -122,8 +124,8 @@ pub struct UiState {
     pub scroll_to_selection: bool,
     /// A link the host app shows in the status bar: (label, URL).
     pub footer_link: Option<(String, String)>,
-    /// Whether the host can pick files (the browser without file access can't).
-    pub can_pick_files: bool,
+    /// The host keeps books in the browser's storage instead of files (the web app without file access).
+    pub books_in_browser: bool,
     /// Show the DEMO banner over a demo book (a host with its own banner turns this off).
     pub demo_banner: bool,
     /// The password typed in the Unlock dialog for a file the host read itself (the browser).
@@ -154,7 +156,7 @@ impl Default for UiState {
             fonts_ready: false,
             scroll_to_selection: false,
             footer_link: None,
-            can_pick_files: true,
+            books_in_browser: false,
             demo_banner: true,
             unlock_answer: None,
             compact: false,
@@ -223,7 +225,7 @@ impl PecuniaApp {
     }
 
     /// Opens a dialog by name: `newTxn`, `newAccount`, `editAccount` (`id`), `potMove`, `split` (`id`), `import`,
-    /// `newBook`, `rename`, `open` (a native file dialog).
+    /// `newBook`, `rename`, `open`, `saveCopy` (native file dialogs).
     pub fn open_dialog(&mut self, name: &str, params: Json) {
         use dialogs::Dialog;
         let d = match name {
@@ -233,6 +235,10 @@ impl PecuniaApp {
             }
             "import" => {
                 self.ui.file_request = Some(FileRequest::Import);
+                return;
+            }
+            "saveCopy" => {
+                self.ui.file_request = Some(FileRequest::SaveCopy);
                 return;
             }
             "newTxn" => Dialog::NewTxn(dialogs::NewTxnForm::from_params(&self.session, &params)),

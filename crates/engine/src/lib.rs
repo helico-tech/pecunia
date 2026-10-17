@@ -187,6 +187,17 @@ impl Session {
         self.store.describe()
     }
 
+    /// The book as its file holds it (encrypted when protected), after saving what is pending: for "Save a copy".
+    pub fn snapshot(&mut self) -> Result<Vec<u8>> {
+        self.flush()?;
+        Ok(self.store.snapshot()?)
+    }
+
+    /// Whether the book can get a password (a file, or the browser's book), unlike the in-memory demo.
+    pub fn can_protect(&self) -> bool {
+        self.store.can_protect()
+    }
+
     pub fn store_path(&self) -> Option<std::path::PathBuf> {
         self.store.path().map(|p| p.to_path_buf())
     }

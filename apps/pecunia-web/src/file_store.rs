@@ -47,6 +47,8 @@ pub struct BrowserFileStore {
     /// The password to try on the next load.
     password: Option<String>,
     random: Random,
+    /// Kept in the browser's storage rather than a file (ADR 0009); people are told so.
+    in_browser: bool,
 }
 
 impl BrowserFileStore {
@@ -54,7 +56,13 @@ impl BrowserFileStore {
     /// a protected book; `random` is the browser's random source.
     pub fn new(name: &str, bytes: Vec<u8>, stamp: Option<Stamp>, password: Option<String>, random: Random) -> (BrowserFileStore, SharedRef) {
         let shared = Arc::new(Mutex::new(Shared { name: name.to_string(), bytes, stamp, ..Shared::default() }));
-        (BrowserFileStore { shared: shared.clone(), key: None, password, random }, shared)
+        (BrowserFileStore { shared: shared.clone(), key: None, password, random, in_browser: false }, shared)
+    }
+
+    /// The same, for a book kept in the browser's storage.
+    pub fn kept_in_browser(mut self) -> BrowserFileStore {
+        self.in_browser = true;
+        self
     }
 }
 
@@ -66,7 +74,8 @@ impl Drop for BrowserFileStore {
 
 impl Store for BrowserFileStore {
     fn describe(&self) -> String {
-        lock(&self.shared).name.clone()
+        let name = lock(&self.shared).name.clone();
+        if self.in_browser { format!("{name} (kept in this browser)") } else { name }
     }
 
     fn load(&mut self) -> store::Result<Loaded> {
@@ -101,8 +110,16 @@ impl Store for BrowserFileStore {
         }
     }
 
+    fn snapshot(&mut self) -> store::Result<Vec<u8>> {
+        Ok(lock(&self.shared).bytes.clone())
+    }
+
     fn changed_externally(&mut self) -> bool {
         lock(&self.shared).external
+    }
+
+    fn can_protect(&self) -> bool {
+        true
     }
 
     fn encrypted(&self) -> bool {

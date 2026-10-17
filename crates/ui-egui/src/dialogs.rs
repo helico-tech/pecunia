@@ -393,24 +393,34 @@ pub fn show(app: &mut PecuniaApp, ctx: &egui::Context, t: &Tokens) {
         .corner_radius(12)
         .inner_margin(egui::Margin::same(20))
         .shadow(egui::epaint::Shadow { offset: [0, 12], blur: 36, spread: 0, color: t.shadow });
-    let modal = egui::Modal::new(egui::Id::new("dialog")).frame(frame).backdrop_color(egui::Color32::from_black_alpha(if t.dark { 120 } else { 60 }));
+    // One id per kind of dialog: egui remembers a window's size by id, and a small dialog must not keep a big one's.
+    let kind = std::mem::discriminant(&dialog);
+    let modal =
+        egui::Modal::new(egui::Id::new(("dialog", kind))).frame(frame).backdrop_color(egui::Color32::from_black_alpha(if t.dark { 120 } else { 60 }));
     let session = &app.session;
+    let in_browser = app.ui.books_in_browser;
     // A dialog taller than the screen (a phone, a long import preview) scrolls.
     let tall = (ctx.content_rect().height() - 80.0).max(200.0);
     let resp = modal.show(ctx, |ui| {
         egui::ScrollArea::vertical()
+            .id_salt(kind)
             .max_height(tall)
-            .show(ui, |ui| match &mut dialog {
-                Dialog::NewTxn(f) => new_txn(session, ui, f, t),
-                Dialog::NewAccount(f) => new_account(session, ui, f, t),
-                Dialog::EditAccount(f) => edit_account(session, ui, f, t),
-                Dialog::PotMove(f) => pot_move(session, ui, f, t),
-                Dialog::Split(f) => split(session, ui, f, t),
-                Dialog::Import(f) => import(session, ui, f, t),
-                Dialog::NewBook(f) => new_book(ui, f, t),
-                Dialog::Rename(f) => rename(ui, f, t),
-                Dialog::Unlock(f) => unlock(ui, f, t),
-                Dialog::SetPassword(f) => set_password(session, ui, f, t),
+            .show(ui, |ui| {
+                let outcome = match &mut dialog {
+                    Dialog::NewTxn(f) => new_txn(session, ui, f, t),
+                    Dialog::NewAccount(f) => new_account(session, ui, f, t),
+                    Dialog::EditAccount(f) => edit_account(session, ui, f, t),
+                    Dialog::PotMove(f) => pot_move(session, ui, f, t),
+                    Dialog::Split(f) => split(session, ui, f, t),
+                    Dialog::Import(f) => import(session, ui, f, t),
+                    Dialog::NewBook(f) => new_book(ui, f, in_browser, t),
+                    Dialog::Rename(f) => rename(ui, f, t),
+                    Dialog::Unlock(f) => unlock(ui, f, t),
+                    Dialog::SetPassword(f) => set_password(session, ui, f, t),
+                };
+                // Room for the buttons' bottom edge inside the scroll area.
+                ui.add_space(2.0);
+                outcome
             })
             .inner
     });
@@ -994,7 +1004,7 @@ fn import(s: &Session, ui: &mut Ui, f: &mut ImportForm, t: &Tokens) -> Outcome {
         if f.account.is_none() && widgets::secondary_button(ui, "New account…", t).clicked() {
             let iban = p["ibans"].get(0).and_then(Json::as_str).unwrap_or("").to_string();
             f.error = Some(format!(
-                "Add the account first (Accounts ▸ New account){}, then import again.",
+                "Add the account first (Accounts → New account){}, then import again.",
                 if iban.is_empty() { String::new() } else { format!(" with IBAN {iban}") }
             ));
         }
@@ -1143,7 +1153,8 @@ fn mapping(ui: &mut Ui, f: &mut ImportForm, p: &Json, t: &Tokens) -> Outcome {
     Outcome::Keep
 }
 
-fn new_book(ui: &mut Ui, f: &mut NewBookForm, t: &Tokens) -> Outcome {
+/// `in_browser`: the host keeps books in the browser's storage, not in files (the web app on a phone).
+fn new_book(ui: &mut Ui, f: &mut NewBookForm, in_browser: bool, t: &Tokens) -> Outcome {
     fit(ui, 440.0);
     if !f.touched {
         f.categories = true;
@@ -1152,9 +1163,12 @@ fn new_book(ui: &mut Ui, f: &mut NewBookForm, t: &Tokens) -> Outcome {
     if title_bar(ui, "New book", t) {
         return Outcome::Close;
     }
-    ui.label(
-        egui::RichText::new("A book is one file on your computer. Nothing goes to a server; keep it somewhere private.").size(12.5).color(t.text_dim),
-    );
+    let about = if in_browser {
+        "The book is kept in this browser, on this device only. Nothing goes to a server. Save a copy now and then: the book menu has Save a copy."
+    } else {
+        "A book is one file on your computer. Nothing goes to a server; keep it somewhere private."
+    };
+    ui.label(egui::RichText::new(about).size(12.5).color(t.text_dim));
     ui.add_space(12.0);
     field(ui, "Name", t);
     let name = text_box(ui, &mut f.name, "e.g. Our household", t);
@@ -1167,14 +1181,14 @@ fn new_book(ui: &mut Ui, f: &mut NewBookForm, t: &Tokens) -> Outcome {
     ui.checkbox(&mut f.sample, "Fill it with the made-up demo household to try things out");
     ui.add_space(10.0);
     field(ui, "Password (optional)", t);
-    password_box(ui, &mut f.password, "Leave empty for an unprotected file", t);
+    password_box(ui, &mut f.password, "Leave empty for no password", t);
     if !f.password.is_empty() {
         ui.add_space(6.0);
         password_box(ui, &mut f.repeat, "Type it again", t);
-        ui.label(egui::RichText::new("The file is encrypted. Without the password nobody can open it, not even you.").size(11.5).color(t.warning));
+        ui.label(egui::RichText::new("The book is encrypted. Without the password nobody can open it, not even you.").size(11.5).color(t.warning));
     }
     error_line(ui, &f.error, t);
-    let (go, cancel) = buttons(ui, "Choose location…", t);
+    let (go, cancel) = buttons(ui, if in_browser { "Create book" } else { "Choose location…" }, t);
     if cancel {
         return Outcome::Close;
     }

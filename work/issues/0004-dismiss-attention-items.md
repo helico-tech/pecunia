@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 type: idea
 created: 2026-10-16
 ---
@@ -11,3 +11,8 @@ the data changes. budget.rs let people answer them ("seen", "someone else's acco
 
 ## Notes
 Needs a place in the book for the answers (meta) and commands; then filter in `needs_attention`.
+
+- 2026-10-17: Done. Fixed-cost news gets a "Seen" button, an own-account question "Not mine". The answers are keys in
+  `meta.dismissed` (an optional field: older apps may drop it, then the items show again; ADR 0006 needs no new
+  version). A price change or missed payment asks again when it changes. Commands `attention.dismiss {key}` and
+  `attention.restore`; `report.overview` gives each item its `key`. Bank differences and Review cannot be dismissed.

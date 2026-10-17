@@ -239,6 +239,10 @@ fn reports_answer_in_cents() {
 }
 
 fn bank_file(format: pecunia_formats::samples::BankFileFormat) -> Vec<u8> {
+    bank_file_of(format, &[(-5210, "Albert Heijn 1427", "Boodschappen"), (345_000, "Werkgever BV", "Salaris"), (-1399, "Netflix", "Abonnement")])
+}
+
+fn bank_file_of(format: pecunia_formats::samples::BankFileFormat, rows: &[(i64, &str, &str)]) -> Vec<u8> {
     use pecunia_formats::samples::{BankFileAccount, BankFileTx, write};
     let account = BankFileAccount { key: "ing".into(), iban: "NL12INGB0001234567".into() };
     let tx = |seq: u32, day: u32, cents: i64, name: &str, desc: &str| BankFileTx {
@@ -250,12 +254,33 @@ fn bank_file(format: pecunia_formats::samples::BankFileFormat) -> Vec<u8> {
         description: desc.into(),
         reference: format!("REF{seq}"),
     };
-    let txs = [
-        tx(1, 2, -5210, "Albert Heijn 1427", "Boodschappen"),
-        tx(2, 25, 345_000, "Werkgever BV", "Salaris"),
-        tx(3, 28, -1399, "Netflix", "Abonnement"),
-    ];
+    let txs: Vec<BankFileTx> = rows.iter().zip(1..).map(|((cents, name, desc), seq)| tx(seq, seq + 1, *cents, name, desc)).collect();
     write(format, &account, &txs, Money(100_000))
+}
+
+#[test]
+fn rules_made_in_review_book_the_waiting_ones() {
+    use base64::Engine as _;
+    let mut s = with_accounts();
+    let rows = [-500, -650, -720, -810, -900].map(|c| (c, "Bakkerij De Korenaar", "Brood"));
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bank_file_of(pecunia_formats::samples::BankFileFormat::IngCsv, &rows));
+    let r = s.execute("import.file", json!({"contentBase64": b64, "name": "ing.csv"})).unwrap();
+    assert_eq!(r["toReview"].as_u64(), Some(5));
+    let ids: Vec<u64> = s.execute("review.list", json!({})).unwrap()["items"].as_array().unwrap().iter().filter_map(|i| i["id"].as_u64()).collect();
+    assert_eq!(ids.len(), 5);
+
+    // Two identical answers make a learned rule; it books the other three at once.
+    s.execute("txn.answer", json!({"id": ids[0], "to": "Groceries"})).unwrap();
+    let r = s.execute("txn.answer", json!({"id": ids[1], "to": "Groceries"})).unwrap();
+    assert_eq!(r["rule"]["booked"].as_u64(), Some(3));
+    assert!(s.take_notices().iter().any(|n| n.text.contains("booked 3 waiting transactions")));
+    assert_eq!(s.execute("review.list", json!({})).unwrap()["total"].as_u64(), Some(0));
+    for id in &ids[2..] {
+        assert_eq!(s.book().txn(TxnId(*id)).unwrap().status, TxnStatus::Auto);
+    }
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(s.execute("review.list", json!({})).unwrap()["total"].as_u64(), Some(4), "one undo takes back the answer and what the rule booked");
+    assert_eq!(s.book().validate(), Ok(()));
 }
 
 #[test]
@@ -340,4 +365,40 @@ fn the_sample_is_a_demo() {
     assert!(s.is_demo());
     assert_eq!(s.book().name(), "Demo household");
     assert!(!session().is_demo());
+}
+
+#[test]
+fn attention_items_can_be_answered() {
+    let mut s = Session::sample();
+    s.now = fixed_now;
+    let attention = |s: &mut Session| s.execute("report.overview", json!({})).unwrap()["attention"].clone();
+    let before = attention(&mut s);
+    let key = before["price_changes"][0]["key"].as_str().unwrap().to_string();
+    assert!(s.execute("attention.dismiss", json!({"key": "price:nothing"})).is_err(), "only open items");
+    assert!(s.execute("attention.restore", json!({})).is_err(), "nothing answered yet");
+    s.execute("attention.dismiss", json!({"key": key})).unwrap();
+    let after = attention(&mut s);
+    assert_eq!(after["price_changes"].as_array().unwrap().len() + 1, before["price_changes"].as_array().unwrap().len());
+    assert_eq!(stored(&mut s).meta.dismissed, vec![key.clone()], "kept in the book");
+    s.execute("edit.undo", json!({})).unwrap();
+    assert_eq!(attention(&mut s), before);
+    s.execute("edit.redo", json!({})).unwrap();
+    assert_eq!(s.execute("attention.restore", json!({})).unwrap()["restored"], 1);
+    assert_eq!(attention(&mut s), before);
+}
+
+#[test]
+fn a_copy_is_the_file_as_stored() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("home.pecunia");
+    let copy = dir.path().join("copy.pecunia");
+    let mut s = session();
+    s.execute("file.new", json!({"path": path.to_str().unwrap(), "password": "correct horse"})).unwrap();
+    s.execute("book.rename", json!({"name": "Ours"})).unwrap();
+    let r = s.execute("file.saveCopy", json!({})).unwrap();
+    assert_eq!(r["dialog"], "saveCopy", "without a path the UI asks where");
+    s.execute("file.saveCopy", json!({"path": copy.to_str().unwrap()})).unwrap();
+    assert_eq!(std::fs::read(&copy).unwrap(), std::fs::read(&path).unwrap(), "the same bytes, still protected");
+    assert!(s.execute("file.saveCopy", json!({"path": copy.to_str().unwrap()})).is_err(), "never overwrites");
+    assert!(Session::sample().snapshot().is_ok(), "the demo can be copied too");
 }

@@ -112,6 +112,14 @@ impl Store for JsonFileStore {
         self.path.display().to_string()
     }
 
+    fn snapshot(&mut self) -> Result<Vec<u8>> {
+        let meta = std::fs::metadata(&self.path).map_err(|e| io(&self.path, e))?;
+        if meta.len() > MAX_FILE_BYTES {
+            return Err(StoreError::Format(format!("{} is larger than {} MB", self.path.display(), MAX_FILE_BYTES / 1024 / 1024)));
+        }
+        std::fs::read(&self.path).map_err(|e| io(&self.path, e))
+    }
+
     fn path(&self) -> Option<&Path> {
         Some(&self.path)
     }

@@ -9,6 +9,10 @@
 
 FROM --platform=$BUILDPLATFORM rust:1-bookworm AS build
 RUN rustup target add wasm32-unknown-unknown
+# wasm-opt (binaryen) shrinks the wasm; `cargo xtask web` needs it.
+RUN curl -sSfL "https://github.com/WebAssembly/binaryen/releases/download/version_133/binaryen-version_133-$(uname -m)-linux.tar.gz" \
+  | tar -xz -C /opt
+ENV PATH="/opt/binaryen-version_133/bin:${PATH}"
 WORKDIR /src
 # The wasm-bindgen CLI must match the library version in Cargo.lock.
 COPY Cargo.lock ./

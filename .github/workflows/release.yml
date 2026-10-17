@@ -188,6 +188,8 @@ jobs:
           rustup default stable
           version=$(awk '/^name = "wasm-bindgen"$/ { getline; gsub(/version = |"/, ""); print }' Cargo.lock)
           wasm-bindgen --version 2>/dev/null | grep -q " $version" || cargo install wasm-bindgen-cli --version "$version" --locked --force
+          curl -sSfL https://github.com/WebAssembly/binaryen/releases/download/version_133/binaryen-version_133-x86_64-linux.tar.gz | tar -xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/binaryen-version_133/bin" >> "$GITHUB_PATH"
       - name: Build and deploy
         if: env.CLOUDFLARE_API_TOKEN != ''
         run: |

@@ -88,6 +88,23 @@ impl App {
                     }
                 }
             }
+            FileRequest::SaveCopy => {
+                let stem = self.app.session.store_path().and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()));
+                let name = stem.unwrap_or_else(|| self.app.session.book().name().to_string());
+                let mut d = rfd::FileDialog::new()
+                    .set_title("Save a copy")
+                    .set_file_name(format!("{name} copy.{FILE_EXTENSION}"))
+                    .add_filter("Pecunia book", &[FILE_EXTENSION]);
+                if let Some(s) = &start {
+                    d = d.set_directory(s);
+                }
+                if let Some(mut path) = d.save_file() {
+                    if path.extension().and_then(|e| e.to_str()) != Some(FILE_EXTENSION) {
+                        path.set_extension(FILE_EXTENSION);
+                    }
+                    self.app.run("file.saveCopy", json!({ "path": path.display().to_string() }));
+                }
+            }
             FileRequest::Import => {
                 // Bank files are usually in Downloads, not next to the book.
                 let d = rfd::FileDialog::new()

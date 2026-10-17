@@ -211,3 +211,14 @@ fn a_wide_window_has_no_phone_menu() {
     assert!(!h.state().ui.compact);
     assert!(h.query_by_label("Menu").is_none());
 }
+
+#[test]
+fn seen_removes_an_item_from_needs_attention() {
+    let mut h = harness(sample());
+    h.run_steps(3);
+    let before = h.query_all_by_label("Seen").count();
+    assert!(before > 0);
+    h.query_all_by_label("Seen").next().unwrap().click();
+    h.run_steps(3);
+    assert_eq!(h.state().session.book().meta.dismissed.len(), 1);
+}

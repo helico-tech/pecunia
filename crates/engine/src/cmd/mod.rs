@@ -4,6 +4,7 @@
 //! dates are `YYYY-MM-DD`; accounts are a number, a name, an IBAN or a path like `ING / Holiday`.
 
 mod account;
+mod attention;
 mod file;
 mod import;
 mod query;
@@ -107,6 +108,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(view::specs());
         v.extend(query::specs());
         v.extend(report::specs());
+        v.extend(attention::specs());
         v
     })
 }
@@ -246,4 +248,13 @@ pub(crate) fn short(v: &Json) -> String {
         other => other.to_string(),
     };
     if s.chars().count() > 40 { format!("{}…", s.chars().take(40).collect::<String>()) } else { s }
+}
+
+/// The tail of a message after a new rule ran: ", and booked 3 waiting transactions", or nothing.
+pub(crate) fn booked_text(booked: usize) -> String {
+    match booked {
+        0 => String::new(),
+        1 => ", and booked 1 waiting transaction".into(),
+        n => format!(", and booked {n} waiting transactions"),
+    }
 }

@@ -52,6 +52,9 @@ pub mod limits {
     pub const PROFILES: usize = 200;
     pub const BALANCES: usize = 100_000;
     pub const IMPORTS: usize = 10_000;
+    /// Answered items in Needs attention, and the length of one key.
+    pub const DISMISSED: usize = 10_000;
+    pub const DISMISSED_KEY: usize = 400;
     /// Rows in one bank file.
     pub const ROWS: usize = 200_000;
 }

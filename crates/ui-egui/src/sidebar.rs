@@ -91,7 +91,7 @@ fn header(app: &mut PecuniaApp, ui: &mut Ui, t: &Tokens) {
             action = Some(("ui.rename", json!({})));
             ui.close();
         }
-        if app.session.store_path().is_some() {
+        if app.session.can_protect() {
             let label = if app.session.encrypted() { "Change password…" } else { "Protect with a password…" };
             if widgets::menu_row(ui, |p, c| icons::glyph(p, c, 13.0, Glyph::Lock, t.text_dim), label, false, t).clicked() {
                 action = Some(("file.setPassword", json!({})));
@@ -111,6 +111,13 @@ fn header(app: &mut PecuniaApp, ui: &mut Ui, t: &Tokens) {
         }
         if widgets::menu_row(ui, |p, c| icons::glyph(p, c, 13.0, Glyph::Folder, t.text_dim), "Open book…", false, t).clicked() {
             action = Some(("file.open", json!({})));
+            ui.close();
+        }
+        if widgets::menu_row(ui, |p, c| icons::glyph(p, c, 13.0, Glyph::Doc, t.text_dim), "Save a copy…", false, t)
+            .on_hover_text("A backup, or a book to take elsewhere")
+            .clicked()
+        {
+            action = Some(("file.saveCopy", json!({})));
             ui.close();
         }
         let current = app.session.store_path().map(|p| p.display().to_string());

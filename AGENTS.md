@@ -13,7 +13,8 @@ data file) follows `helico/openissue`. A book is one `.pecunia` JSON file.
 - `cargo xtask bundle [--universal] [--dmg]` — `target/release/bundle/Pecunia.app`; `--dmg` also writes the
   `.dmg` and CLI archive to `target/dist/`. `cargo xtask package-linux` / `package-windows` — the Linux tarball
   and Windows zip (run on that OS). Release: [below](#releases). `cargo xtask web` — the browser app in
-  `target/web/` (deploy: `npx wrangler deploy --config apps/pecunia-web/wrangler.toml`).
+  `target/web/` (needs the `wasm-bindgen` CLI and `wasm-opt`: `brew install binaryen`; deploy: `npx wrangler deploy
+  --config apps/pecunia-web/wrangler.toml`).
 - **Look at UI changes:** `cargo run -p pecunia-ui-egui --example snapshot -- --sample [--dark] [--cmd 'id={json}'] out.png`, then read the PNG.
   Also at phone size (ADR 0008): `--size 390x844 --scale 1 [--menu]`.
 - `PECUNIA_DATA_DIR=/tmp/x` keeps the app's prefs and default book out of your home folder while testing.

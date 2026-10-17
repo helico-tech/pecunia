@@ -620,6 +620,8 @@ struct Item {
     detail: String,
     button: Option<(&'static str, bool)>,
     act: Act,
+    /// "Seen" or "Not mine", with the item's key for `attention.dismiss`.
+    dismiss: Option<(&'static str, String)>,
 }
 
 fn plural(n: usize, one: &str, many: &str) -> String {
@@ -649,6 +651,7 @@ fn attention_items(d: &Data, t: &Tokens) -> Vec<Item> {
             detail: parts.join(" · "),
             button: Some(("Open Review", true)),
             act: Act::Run("view.review", json!({})),
+            dismiss: None,
         });
     }
     for b in &a.bank_differences {
@@ -663,6 +666,7 @@ fn attention_items(d: &Data, t: &Tokens) -> Vec<Item> {
                 detail: format!("The bank said {} on {}; the books say {}.", stated.format(), date.format("%-d %b %Y"), books.format()),
                 button: None,
                 act: Act::Show(b.account),
+                dismiss: None,
             });
         }
     }
@@ -682,6 +686,7 @@ fn attention_items(d: &Data, t: &Tokens) -> Vec<Item> {
             ),
             button: None,
             act: fixed(),
+            dismiss: Some(("Seen", c.key())),
         });
     }
     for c in &a.new_fixed_costs {
@@ -692,6 +697,7 @@ fn attention_items(d: &Data, t: &Tokens) -> Vec<Item> {
             detail: format!("{} months in a row around day {} · next on {}", c.months_in_a_row, c.day_of_month, c.next_date.format("%-d %b")),
             button: None,
             act: fixed(),
+            dismiss: Some(("Seen", c.key())),
         });
     }
     for c in &a.stopped_fixed_costs {
@@ -702,6 +708,7 @@ fn attention_items(d: &Data, t: &Tokens) -> Vec<Item> {
             detail: format!("Last paid on {}. Stopped, or paid another way?", c.last_date.format("%-d %b %Y")),
             button: None,
             act: fixed(),
+            dismiss: Some(("Seen", c.key())),
         });
     }
     for c in &a.own_accounts {
@@ -719,6 +726,7 @@ fn attention_items(d: &Data, t: &Tokens) -> Vec<Item> {
             ),
             button: Some(("Add account", false)),
             act: Act::Dialog("newAccount", json!({ "kind": "savings", "name": c.name, "iban": c.iban })),
+            dismiss: Some(("Not mine", c.key())),
         });
     }
     items
@@ -771,11 +779,19 @@ fn attention_row(ui: &mut Ui, item: Item, i: usize, t: &Tokens, acts: &mut Vec<A
     // The button (when there is one) sits on the right; the rest of the row is clickable.
     let mut button_w = 0.0;
     let mut clicked = false;
-    if let Some((label, primary)) = item.button {
+    if item.button.is_some() || item.dismiss.is_some() {
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::right_to_left(egui::Align::Center)));
-        let r = if primary { widgets::primary_button(&mut child, label, t) } else { widgets::secondary_button(&mut child, label, t) };
-        button_w = r.rect.width() + 12.0;
-        clicked |= r.clicked();
+        if let Some((label, primary)) = item.button {
+            let r = if primary { widgets::primary_button(&mut child, label, t) } else { widgets::secondary_button(&mut child, label, t) };
+            clicked |= r.clicked();
+        }
+        if let Some((label, key)) = &item.dismiss {
+            let r = widgets::secondary_button(&mut child, label, t).on_hover_text("Don't show this again");
+            if r.clicked() {
+                acts.push(Act::Run("attention.dismiss", json!({ "key": key })));
+            }
+        }
+        button_w = rect.right() - child.min_rect().left() + 12.0;
     }
     let hit = Rect::from_min_max(rect.min, pos2(rect.right() - button_w, rect.bottom()));
     let resp = ui.interact(hit, ui.id().with(("attention", i)), Sense::click());

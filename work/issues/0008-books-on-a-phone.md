@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 type: question
 created: 2026-10-16
 ---
@@ -21,3 +21,10 @@ Options:
   your other copies, so it needs a clear backup story.
 - First check on a real Android phone what Chrome supports (feature detection is already in
   `js/fs.js`).
+
+- 2026-10-17: The owner asked about a PWA or an iOS app, then chose "installable web app + book kept in the
+  browser". Done as ADR 0009: IndexedDB books behind the same handle API, a chooser for them, open-from-file
+  copies a book in, `file.saveCopy` (all apps) to take one out, manifest + service worker for home screen and
+  offline. Checked in headless Chrome without the file API, at phone size with touch: create, edit, reload,
+  offline reload, open from a file, chooser, download. Not checked on a real iPhone or Android phone.
+  A native iOS app stays an idea for later.

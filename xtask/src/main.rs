@@ -8,7 +8,7 @@
 //! - `package-linux [--target TRIPLE]`: builds `target/dist/pecunia-<version>-linux-<arch>.tar.gz`.
 //! - `package-windows`: builds `target/dist/pecunia-<version>-windows-<arch>.zip`.
 //! - `web`: builds the browser app into `target/web/` (needs the wasm32 target and a matching
-//!   `wasm-bindgen` CLI; `wasm-opt` is used when installed). Deploy: see `apps/pecunia-web/wrangler.toml`.
+//!   `wasm-bindgen` CLI and `wasm-opt` from binaryen). Deploy: see `apps/pecunia-web/wrangler.toml`.
 //! - `icon`: re-renders the committed icon files in `packaging/` from `icons::app_icon`.
 
 use std::path::{Path, PathBuf};
@@ -138,7 +138,22 @@ fn web() -> Result<(), String> {
     if !have.split_whitespace().any(|w| w == want) {
         return Err(format!("needs wasm-bindgen {want}: cargo install wasm-bindgen-cli --version {want} --locked"));
     }
-    cargo(&["build", "--release", "-p", "pecunia-web", "--target", WASM])?;
+    if Command::new("wasm-opt").arg("--version").output().is_err() {
+        return Err("needs wasm-opt from binaryen (brew install binaryen, or a release from github.com/WebAssembly/binaryen)".into());
+    }
+    // Size over speed for the download: optimise for size, one codegen unit, full LTO (10.5 → 6 MB).
+    eprintln!("» cargo build --release -p pecunia-web --target {WASM} (size settings)");
+    let status = Command::new(env!("CARGO"))
+        .args(["build", "--release", "-p", "pecunia-web", "--target", WASM])
+        .env("CARGO_PROFILE_RELEASE_OPT_LEVEL", "s")
+        .env("CARGO_PROFILE_RELEASE_LTO", "fat")
+        .env("CARGO_PROFILE_RELEASE_CODEGEN_UNITS", "1")
+        .current_dir(root())
+        .status()
+        .map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err("building the wasm failed".into());
+    }
     let out = root().join("target/web");
     if out.exists() {
         std::fs::remove_dir_all(&out).map_err(|e| e.to_string())?;
@@ -147,19 +162,57 @@ fn web() -> Result<(), String> {
     let wasm = root().join(format!("target/{WASM}/release/pecunia-web.wasm"));
     run("wasm-bindgen", &["--target", "web", "--no-typescript", "--out-dir", &out.display().to_string(), &wasm.display().to_string()])?;
     let bg = out.join("pecunia-web_bg.wasm").display().to_string();
-    if Command::new("wasm-opt").arg("--version").output().is_ok() {
-        run("wasm-opt", &["-Oz", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "-o", &bg, &bg])?;
-    } else {
-        eprintln!("web: wasm-opt not found; the wasm file is larger than it needs to be");
-    }
+    run("wasm-opt", &["-Oz", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "-o", &bg, &bg])?;
     let statics = root().join("apps/pecunia-web/static");
     for entry in std::fs::read_dir(&statics).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         std::fs::copy(entry.path(), out.join(entry.file_name())).map_err(|e| e.to_string())?;
     }
     std::fs::copy(root().join("packaging/linux/pecunia.png"), out.join("icon.png")).map_err(|e| e.to_string())?;
+    for entry in std::fs::read_dir(root().join("packaging/web")).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        std::fs::copy(entry.path(), out.join(entry.file_name())).map_err(|e| e.to_string())?;
+    }
+    service_worker(&out)?;
     eprintln!("web: built {}", out.display());
     Ok(())
+}
+
+/// Fills in `sw.js`: the files to keep for offline use, and a cache name that changes with them.
+fn service_worker(out: &Path) -> Result<(), String> {
+    fn walk(dir: &Path, out: &Path, files: &mut Vec<String>) -> Result<(), String> {
+        for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
+            let path = entry.map_err(|e| e.to_string())?.path();
+            if path.is_dir() {
+                walk(&path, out, files)?;
+            } else if let Ok(rel) = path.strip_prefix(out) {
+                let rel = rel.to_string_lossy().replace('\\', "/");
+                if rel != "sw.js" && rel != "_headers" && rel != "index.html" {
+                    files.push(rel);
+                }
+            }
+        }
+        Ok(())
+    }
+    let mut files = Vec::new();
+    walk(out, out, &mut files)?;
+    files.sort();
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    for f in &files {
+        std::hash::Hash::hash(f, &mut hash);
+        std::hash::Hash::hash(&std::fs::read(out.join(f)).map_err(|e| e.to_string())?, &mut hash);
+    }
+    std::hash::Hash::hash(&std::fs::read(out.join("index.html")).map_err(|e| e.to_string())?, &mut hash);
+    let cache = format!("pecunia-{}-{:016x}", env!("CARGO_PKG_VERSION"), std::hash::Hasher::finish(&hash));
+    // The page itself is cached as "./" (the address people open).
+    let list: Vec<String> = std::iter::once("./".to_string()).chain(files).map(|f| format!("{f:?}")).collect();
+    let sw = out.join("sw.js");
+    let text = std::fs::read_to_string(&sw).map_err(|e| e.to_string())?;
+    if !text.contains("__CACHE__") || !text.contains("__FILES__") {
+        return Err("sw.js has no __CACHE__ / __FILES__ to fill in".into());
+    }
+    let text = text.replace("\"__CACHE__\"", &format!("{cache:?}")).replace("__FILES__", &format!("[{}]", list.join(", ")));
+    std::fs::write(&sw, text).map_err(|e| e.to_string())
 }
 
 fn run(cmd: &str, args: &[&str]) -> Result<(), String> {

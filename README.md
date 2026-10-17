@@ -28,8 +28,12 @@ Household bookkeeping that stays on your computer, in pure Rust.
 
 Open **https://pecunia.helico.app** in Chrome or Edge. Pick a `.pecunia` file on your computer
 (or create one) and every change is saved straight back to that file; nothing is stored on a
-server. Bank files are read in the browser. Firefox and Safari can't edit local files yet, so
-there you get the sample household, not saved.
+server. Bank files are read in the browser.
+
+On a phone, in Safari and in Firefox, which can't edit files, your book is kept in the browser
+itself, on that device only. Use **Save a copy** in the book menu now and then as a backup, or to
+take the book to your computer. Add the page to your home screen to use it as an app; it also
+works offline.
 
 ## Download
 

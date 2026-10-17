@@ -35,6 +35,10 @@ pub struct BookMeta {
     pub balances: Vec<StatedBalance>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imports: Vec<ImportRecord>,
+    /// Items in Needs attention the person answered ("Seen", "Not mine"), by their key
+    /// (`reports::attention`). An older app may drop them; the items then show again.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dismissed: Vec<String>,
 }
 
 fn one() -> u64 {
@@ -170,7 +174,7 @@ impl Book {
             "Household".into()
         });
         let mut b = Book {
-            meta: BookMeta { name, profiles: Vec::new(), balances: Vec::new(), imports: Vec::new(), ..meta.clone() },
+            meta: BookMeta { name, profiles: Vec::new(), balances: Vec::new(), imports: Vec::new(), dismissed: Vec::new(), ..meta.clone() },
             accounts: BTreeMap::new(),
             txns: BTreeMap::new(),
             rules: BTreeMap::new(),
@@ -323,6 +327,13 @@ impl Book {
         }
         let max_import = b.meta.imports.iter().map(|i| i.id.0).max().unwrap_or(0);
         b.meta.next_import = meta.next_import.max(max_import.saturating_add(1)).max(1);
+        let mut seen = BTreeSet::new();
+        b.meta.dismissed = meta
+            .dismissed
+            .into_iter()
+            .filter(|k| !k.is_empty() && k.len() <= limits::DISMISSED_KEY && seen.insert(k.clone()))
+            .take(limits::DISMISSED)
+            .collect();
         (b, notes)
     }
 

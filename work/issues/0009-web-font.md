@@ -1,5 +1,5 @@
 ---
-status: todo
+status: done
 type: bug
 created: 2026-10-16
 ---
@@ -18,3 +18,7 @@ Open https://pecunia.helico.app, go to All transactions: the second line of each
 Embed one open font with the symbols we use (e.g. Inter or Noto Sans, regular + semibold, subset)
 for the web build only; it adds about 100–300 KB to the download. Or replace → with a drawn arrow
 where it appears.
+
+- 2026-10-17: Fixed. The web build bundles Inter 4.1 Regular and SemiBold (OFL), subset to Latin, punctuation,
+  arrows and key symbols (about 70 KB each, `crates/ui-egui/assets/fonts/`); the desktop keeps the system font.
+  The one symbol Inter lacks (▸) is replaced by →. Checked headless: → and ⌘ render.

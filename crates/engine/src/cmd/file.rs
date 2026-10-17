@@ -17,6 +17,9 @@ pub fn specs() -> Vec<CommandSpec> {
             is_file, set_password),
         cmd!(Plain "file.removePassword", "Remove the Password", ["File"], None, "Stores the book unencrypted again.", is_encrypted, remove_password),
         cmd!(Plain "file.save", "Save", ["File"], Some("⌘S"), "Saving is automatic; this retries a failed save.", always, save),
+        cmd!(Plain "file.saveCopy", "Save a Copy…", ["File"], None,
+            "path (a new file; never overwrites one). Writes the book as it is stored (still protected when it has a password): a backup, or a book to take elsewhere.",
+            always, save_copy),
         cmd!(Plain "file.reload", "Reload", ["File"], None, "Reads the book again from where it is stored.", always, reload),
         cmd!(Edit "book.rename", "Rename Book", [], None, "name", always, rename),
     ]
@@ -72,6 +75,18 @@ fn save(s: &mut Session, _: &Json) -> Result<Json> {
     Ok(json!({ "saved": true, "location": s.location() }))
 }
 
+fn save_copy(s: &mut Session, p: &Json) -> Result<Json> {
+    const C: &str = "file.saveCopy";
+    let Some(path) = opt_string(C, p, "path")?.filter(|x| !x.trim().is_empty()) else {
+        s.request(UiRequest::Dialog("saveCopy".into(), json!({})));
+        return Ok(json!({ "dialog": "saveCopy" }));
+    };
+    let bytes = s.snapshot()?;
+    pecunia_store::save_copy(Path::new(&path), &bytes)?;
+    s.notify(format!("Saved a copy as {path}"), false);
+    Ok(json!({ "path": path, "bytes": bytes.len() }))
+}
+
 fn reload(s: &mut Session, _: &Json) -> Result<Json> {
     let loaded = s.store.load()?;
     s.replace(None, loaded.book);
@@ -85,7 +100,7 @@ fn rename(s: &mut Session, p: &Json) -> Result<Json> {
 }
 
 fn is_file(s: &Session) -> std::result::Result<(), String> {
-    if s.store_path().is_some() { Ok(()) } else { Err("this book is not a file".into()) }
+    if s.can_protect() { Ok(()) } else { Err("this book is not a file".into()) }
 }
 
 fn is_encrypted(s: &Session) -> std::result::Result<(), String> {

@@ -82,6 +82,26 @@ pub struct PriceChange {
     pub per_year_more: Money,
 }
 
+impl PriceChange {
+    /// Its key in [`BookMeta::dismissed`](crate::book::BookMeta): this price from this date.
+    pub fn key(&self) -> String {
+        format!("price:{}:{}", self.since, self.payee_norm)
+    }
+}
+
+impl NewFixedCost {
+    pub fn key(&self) -> String {
+        format!("new:{}", self.payee_norm)
+    }
+}
+
+impl StoppedCost {
+    /// This missed payment; a later one asks again.
+    pub fn key(&self) -> String {
+        format!("stopped:{}:{}", self.expected, self.payee_norm)
+    }
+}
+
 /// A payment that repeated a few months in a row and never before.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct NewFixedCost {

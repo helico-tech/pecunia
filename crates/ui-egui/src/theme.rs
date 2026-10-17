@@ -1,5 +1,6 @@
-//! Design tokens and fonts. Colours are our own; fonts come from the operating system at runtime
-//! (nothing bundled), with egui's built-in fonts as the fallback.
+//! Design tokens and fonts. Colours are our own; fonts come from the operating system at runtime,
+//! with egui's built-in fonts as the fallback. The browser has no system fonts to read, so the web
+//! build bundles Inter (OFL, subset to Latin, punctuation, arrows and key symbols; `assets/fonts/`).
 
 use std::sync::Arc;
 
@@ -167,11 +168,16 @@ fn load(paths: &[(&str, u32)]) -> Option<FontData> {
     })
 }
 
-/// System UI fonts first, egui's built-in fonts after them for anything missing.
-pub fn font_definitions() -> FontDefinitions {
-    let mut fonts = FontDefinitions::default();
-    let base_prop = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
-    let base_mono = fonts.families.get(&FontFamily::Monospace).cloned().unwrap_or_default();
+#[cfg(target_arch = "wasm32")]
+fn ui_fonts() -> (Option<FontData>, Option<FontData>) {
+    (
+        Some(FontData::from_static(include_bytes!("../assets/fonts/Inter-Regular.ttf"))),
+        Some(FontData::from_static(include_bytes!("../assets/fonts/Inter-SemiBold.ttf"))),
+    )
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn ui_fonts() -> (Option<FontData>, Option<FontData>) {
     let regular = load(&[
         ("/System/Library/Fonts/SFNS.ttf", 0),
         ("/System/Library/Fonts/HelveticaNeue.ttc", 0),
@@ -186,6 +192,15 @@ pub fn font_definitions() -> FontDefinitions {
         ("/usr/share/fonts/truetype/noto/NotoSans-SemiBold.ttf", 0),
         ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 0),
     ]);
+    (regular, strong)
+}
+
+/// System UI fonts first (Inter on the web), egui's built-in fonts after them for anything missing.
+pub fn font_definitions() -> FontDefinitions {
+    let mut fonts = FontDefinitions::default();
+    let base_prop = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
+    let base_mono = fonts.families.get(&FontFamily::Monospace).cloned().unwrap_or_default();
+    let (regular, strong) = ui_fonts();
     let monospace =
         load(&[("/System/Library/Fonts/SFNSMono.ttf", 0), ("/System/Library/Fonts/Menlo.ttc", 0), ("C:\\Windows\\Fonts\\consola.ttf", 0)]);
     let mut prop = Vec::new();

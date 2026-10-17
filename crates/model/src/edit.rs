@@ -691,6 +691,28 @@ impl Book {
         Ok(())
     }
 
+    // ------------------------------------------------------------------ Needs attention
+
+    /// Stops asking about one item in Needs attention (its `key()`). Returns false when it was answered already.
+    pub fn dismiss(&mut self, key: &str) -> Result<bool> {
+        if key.is_empty() || key.len() > limits::DISMISSED_KEY {
+            return Err(invalid("that is not an item in Needs attention"));
+        }
+        if self.meta.dismissed.iter().any(|k| k == key) {
+            return Ok(false);
+        }
+        if self.meta.dismissed.len() >= limits::DISMISSED {
+            return Err(invalid("too many answered items; show them again first"));
+        }
+        self.meta.dismissed.push(key.to_string());
+        Ok(true)
+    }
+
+    /// Shows every answered item in Needs attention again. Returns how many.
+    pub fn restore_dismissed(&mut self) -> usize {
+        std::mem::take(&mut self.meta.dismissed).len()
+    }
+
     // ------------------------------------------------------------------ CSV profiles
 
     /// Saves a CSV layout the person mapped (replaces one with the same name).

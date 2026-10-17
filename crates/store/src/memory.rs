@@ -29,4 +29,8 @@ impl Store for MemoryStore {
         self.applies += 1;
         Ok(())
     }
+
+    fn snapshot(&mut self) -> Result<Vec<u8>> {
+        crate::encode(&self.book)
+    }
 }

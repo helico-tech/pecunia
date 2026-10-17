@@ -57,8 +57,29 @@ fn overview(s: &mut Session, p: &Json) -> Result<Json> {
         "thisMonth": to_json(&reports::income_and_expenses(&tree, &t, month_start(today), today)),
         "lastMonth": to_json(&reports::income_and_expenses(&tree, &t, lm_from, lm_to)),
         "monthEnds": to_json(&reports::bank_and_cash_over_time(&tree, &t, year_ago, today)),
-        "attention": to_json(&reports::needs_attention(b, today)),
+        "attention": attention_json(&reports::needs_attention(b, today)),
     }))
+}
+
+/// Needs attention, each item that can be answered with its `key` (for `attention.dismiss`).
+fn attention_json(a: &reports::NeedsAttention) -> Json {
+    let mut j = to_json(a);
+    let keys: [(&str, Vec<String>); 4] = [
+        ("own_accounts", a.own_accounts.iter().map(|c| c.key()).collect()),
+        ("price_changes", a.price_changes.iter().map(|c| c.key()).collect()),
+        ("new_fixed_costs", a.new_fixed_costs.iter().map(|c| c.key()).collect()),
+        ("stopped_fixed_costs", a.stopped_fixed_costs.iter().map(|c| c.key()).collect()),
+    ];
+    for (field, keys) in keys {
+        if let Some(items) = j.get_mut(field).and_then(Json::as_array_mut) {
+            for (item, key) in items.iter_mut().zip(keys) {
+                if let Some(o) = item.as_object_mut() {
+                    o.insert("key".into(), Json::String(key));
+                }
+            }
+        }
+    }
+    j
 }
 
 fn net_worth(s: &mut Session, p: &Json) -> Result<Json> {

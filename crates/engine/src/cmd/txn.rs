@@ -91,8 +91,9 @@ fn answer(s: &mut Session, p: &Json) -> Result<Json> {
     let change = s.book_mut().answer(id, to, always)?;
     let rule = match change {
         RuleChange::Create { payee_prefix, .. } => {
-            s.notify(format!("New payee rule: {payee_prefix} → {}", s.book().account_label(to)), true);
-            json!({ "created": payee_prefix })
+            let booked = s.book_mut().apply_rules();
+            s.notify(format!("New payee rule: {payee_prefix} → {}{}", s.book().account_label(to), booked_text(booked)), true);
+            json!({ "created": payee_prefix, "booked": booked })
         }
         RuleChange::MarkMixed(r) => json!({ "mixed": r.0 }),
         RuleChange::None => Json::Null,
